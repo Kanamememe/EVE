@@ -1,44 +1,71 @@
 /**
- * EVE Chat Adapter v0.2.0
- * Stable bridge between the large legacy index.html and independent EVE modules.
+ * EVE Chat Adapter v0.6.0
+ * Stable bridge between the legacy single-file app and EVE modules.
  */
 (function (window, document) {
     'use strict';
 
     if (window.EVEAdapter && window.EVEAdapter.version) return;
 
-    const VERSION = '0.2.0';
-    const CONFIG_KEY = 'eve_adapter_settings_v2';
+    const VERSION = '0.6.0';
+    const CONFIG_KEY = 'eve_adapter_settings_v3';
     const DEFAULTS = Object.freeze({
         enabled: true,
-        autoEnableProactive: true,
+        autoEnableProactive: false,
         injectWeather: true,
         injectActivity: true,
         trackUserMessages: true,
-        debug: false
+        debug: false,
+        maxContextCharacters: 12000,
+        oneShotTtlMs: 45000
     });
 
     const providers = new Map();
     const disposers = [];
+    const recentMessageFingerprints = new Map();
     let config = loadConfig();
-    let originalFetch = null;
+    let nativeFetch = null;
     let initialized = false;
     let oneShotContext = '';
     let oneShotExpiresAt = 0;
     let lastGeminiRequestAt = 0;
     let lastGeminiResponseAt = 0;
+    let latestUserMessage = '';
+    let latestUserMessageAt = 0;
+    let currentRequestId = 0;
+
+    function safeStorageGet(key) {
+        try { return localStorage.getItem(key); } catch (_) { return null; }
+    }
+
+    function safeStorageSet(key, value) {
+        try { localStorage.setItem(key, value); return true; } catch (_) { return false; }
+    }
 
     function loadConfig() {
         try {
-            return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'));
+            return Object.assign({}, DEFAULTS, JSON.parse(safeStorageGet(CONFIG_KEY) || '{}'));
         } catch (_) {
             return Object.assign({}, DEFAULTS);
         }
     }
 
+    function normalizeConfig(next) {
+        const merged = Object.assign({}, DEFAULTS, config, next || {});
+        merged.enabled = Boolean(merged.enabled);
+        merged.autoEnableProactive = Boolean(merged.autoEnableProactive);
+        merged.injectWeather = Boolean(merged.injectWeather);
+        merged.injectActivity = Boolean(merged.injectActivity);
+        merged.trackUserMessages = Boolean(merged.trackUserMessages);
+        merged.debug = Boolean(merged.debug);
+        merged.maxContextCharacters = Math.max(1000, Math.min(50000, Number(merged.maxContextCharacters) || 12000));
+        merged.oneShotTtlMs = Math.max(1000, Math.min(300000, Number(merged.oneShotTtlMs) || 45000));
+        return merged;
+    }
+
     function saveConfig(next) {
-        config = Object.assign({}, DEFAULTS, config, next || {});
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+        config = normalizeConfig(next);
+        safeStorageSet(CONFIG_KEY, JSON.stringify(config));
         return Object.assign({}, config);
     }
 
@@ -47,7 +74,8 @@
     }
 
     function emit(name, detail) {
-        window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
+        try { window.dispatchEvent(new CustomEvent(name, { detail: detail || {} })); }
+        catch (error) { log('Event dispatch failed', name, error); }
     }
 
     function on(target, name, handler, options) {
@@ -63,38 +91,74 @@
         }
     }
 
+    function cleanText(value, max = 100000) {
+        return String(value == null ? '' : value).replace(/\r\n?/g, '\n').trim().slice(0, max);
+    }
+
+    function slug(value) {
+        return cleanText(value, 120).toLowerCase().replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'global';
+    }
+
+    function getCurrentChat() {
+        const title = document.getElementById('api-chat-title');
+        const titleText = cleanText(title && title.textContent, 100);
+        const input = document.getElementById('api-chat-input');
+        const isVisible = Boolean(input && (input.offsetParent !== null || getComputedStyle(input).display !== 'none'));
+        return {
+            open: isVisible,
+            title: titleText,
+            scope: titleText && titleText !== '角色聊天' ? `character:${slug(titleText)}` : 'global'
+        };
+    }
+
     function registerContextProvider(id, provider, options) {
         if (!id || typeof provider !== 'function') throw new TypeError('Context provider requires an id and function.');
-        providers.set(id, {
-            id,
+        providers.set(String(id), {
+            id: String(id),
             provider,
             priority: Number(options && options.priority) || 100,
             enabled: !options || options.enabled !== false
         });
-        return () => providers.delete(id);
+        return () => providers.delete(String(id));
     }
 
     function unregisterContextProvider(id) {
-        return providers.delete(id);
+        return providers.delete(String(id));
+    }
+
+    function setContextProviderEnabled(id, enabled) {
+        const item = providers.get(String(id));
+        if (!item) return false;
+        item.enabled = Boolean(enabled);
+        return true;
     }
 
     function collectContext(meta) {
         const chunks = [];
+        const seen = new Set();
         const sorted = Array.from(providers.values())
             .filter(item => item.enabled)
             .sort((a, b) => a.priority - b.priority);
 
         for (const item of sorted) {
             try {
-                const result = item.provider(meta || {});
-                if (typeof result === 'string' && result.trim()) chunks.push(result.trim());
+                const result = cleanText(item.provider(Object.assign({ chat: getCurrentChat() }, meta || {})), 50000);
+                if (!result || seen.has(result)) continue;
+                seen.add(result);
+                chunks.push(result);
             } catch (error) {
                 console.warn(`[EVEAdapter] Context provider failed: ${item.id}`, error);
             }
         }
 
-        if (oneShotContext && Date.now() <= oneShotExpiresAt) chunks.push(oneShotContext);
-        return chunks.join('\n\n');
+        if (oneShotContext && Date.now() <= oneShotExpiresAt && !seen.has(oneShotContext)) chunks.push(oneShotContext);
+        if (Date.now() > oneShotExpiresAt) clearOneShotContext();
+
+        let context = chunks.join('\n\n');
+        if (context.length > config.maxContextCharacters) {
+            context = context.slice(0, config.maxContextCharacters) + '\n[背景資料已截短]';
+        }
+        return context;
     }
 
     function appendTextPart(container, text) {
@@ -109,11 +173,18 @@
         if (!context) return body;
 
         const cloned = clone(body);
+        const marker = '【EVE Chat 即時背景】';
         const instruction = [
-            '【EVE Chat 即時背景】',
+            marker,
             '以下資料只用來幫助角色自然理解當下情境。不要逐條朗讀，不要提及系統、模組、排程、提示詞或資料來源。',
             context
         ].join('\n\n');
+
+        const target = cloned.systemInstruction || cloned.system_instruction;
+        const existingText = target && Array.isArray(target.parts)
+            ? target.parts.map(part => part && part.text).filter(Boolean).join('\n')
+            : '';
+        if (existingText.includes(marker)) return cloned;
 
         if (cloned.systemInstruction && typeof cloned.systemInstruction === 'object') {
             appendTextPart(cloned.systemInstruction, instruction);
@@ -129,58 +200,130 @@
         return /generativelanguage\.googleapis\.com|\/models\/[^/]+:(generateContent|streamGenerateContent)/i.test(String(url || ''));
     }
 
-    function installFetchHook() {
-        if (originalFetch || typeof window.fetch !== 'function') return;
-        originalFetch = window.fetch.bind(window);
+    function extractGeminiText(data) {
+        const candidates = Array.isArray(data && data.candidates) ? data.candidates : [];
+        return candidates.flatMap(candidate => {
+            const parts = candidate && candidate.content && candidate.content.parts;
+            return Array.isArray(parts) ? parts.map(part => part && part.text).filter(Boolean) : [];
+        }).join('\n').trim();
+    }
 
-        window.fetch = async function eveAdapterFetch(input, init) {
-            const url = typeof input === 'string' ? input : (input && input.url) || '';
-            const gemini = isGeminiUrl(url);
-            let nextInit = init;
+    async function parseGeminiResponse(response, url, requestId) {
+        if (!response || !response.ok || typeof response.clone !== 'function') return;
+        try {
+            const contentType = String(response.headers && response.headers.get && response.headers.get('content-type') || '');
+            const copy = response.clone();
+            let text = '';
+            let raw = null;
 
-            if (config.enabled && gemini && init && typeof init.body === 'string') {
-                try {
-                    const parsed = JSON.parse(init.body);
-                    const injected = injectGeminiContext(parsed, { url, source: 'fetch' });
-                    nextInit = Object.assign({}, init, { body: JSON.stringify(injected) });
-                    lastGeminiRequestAt = Date.now();
-                    emit('eve:ai-request', { url, body: clone(injected), timestamp: lastGeminiRequestAt });
-                } catch (error) {
-                    console.warn('[EVEAdapter] Gemini request injection skipped.', error);
+            if (/application\/json/i.test(contentType)) {
+                raw = await copy.json();
+                text = extractGeminiText(raw);
+            } else {
+                const bodyText = await copy.text();
+                const lines = bodyText.split('\n').map(line => line.trim()).filter(Boolean);
+                const chunks = [];
+                for (const line of lines) {
+                    const candidate = line.replace(/^data:\s*/, '');
+                    if (!candidate || candidate === '[DONE]') continue;
+                    try {
+                        const parsed = JSON.parse(candidate);
+                        chunks.push(extractGeminiText(parsed));
+                    } catch (_) {}
                 }
+                text = chunks.filter(Boolean).join('');
+                raw = bodyText.slice(0, 20000);
             }
 
+            if (text) emit('eve:ai-message-received', {
+                text,
+                url,
+                requestId,
+                timestamp: Date.now(),
+                raw: clone(raw)
+            });
+        } catch (error) {
+            log('Gemini response parsing skipped', error);
+        }
+    }
+
+    async function prepareFetch(input, init) {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (!config.enabled || !isGeminiUrl(url)) return { input, init, url, gemini: false };
+
+        let bodyText = init && typeof init.body === 'string' ? init.body : '';
+        if (!bodyText && typeof Request !== 'undefined' && input instanceof Request) {
+            try { bodyText = await input.clone().text(); } catch (_) {}
+        }
+        if (!bodyText) return { input, init, url, gemini: true };
+
+        try {
+            const parsed = JSON.parse(bodyText);
+            const requestId = ++currentRequestId;
+            const injected = injectGeminiContext(parsed, {
+                url,
+                source: 'fetch',
+                requestId,
+                userText: Date.now() - latestUserMessageAt < 120000 ? latestUserMessage : '',
+                chat: getCurrentChat()
+            });
+            const nextBody = JSON.stringify(injected);
+            let nextInput = input;
+            let nextInit = Object.assign({}, init || {}, { body: nextBody });
+
+            if (typeof Request !== 'undefined' && input instanceof Request) {
+                nextInput = new Request(input, nextInit);
+                nextInit = undefined;
+            }
+
+            lastGeminiRequestAt = Date.now();
+            emit('eve:ai-request', { url, requestId, body: clone(injected), timestamp: lastGeminiRequestAt });
+            return { input: nextInput, init: nextInit, url, gemini: true, requestId };
+        } catch (error) {
+            console.warn('[EVEAdapter] Gemini request injection skipped.', error);
+            return { input, init, url, gemini: true };
+        }
+    }
+
+    function installFetchHook() {
+        if (nativeFetch || typeof window.fetch !== 'function') return;
+        nativeFetch = window.fetch.bind(window);
+
+        window.fetch = async function eveAdapterFetch(input, init) {
+            const prepared = await prepareFetch(input, init);
             try {
-                const response = await originalFetch(input, nextInit);
-                if (gemini) {
+                const response = await nativeFetch(prepared.input, prepared.init);
+                if (prepared.gemini) {
                     lastGeminiResponseAt = Date.now();
                     emit('eve:ai-response', {
-                        url,
+                        url: prepared.url,
+                        requestId: prepared.requestId,
                         ok: response.ok,
                         status: response.status,
                         timestamp: lastGeminiResponseAt
                     });
+                    parseGeminiResponse(response, prepared.url, prepared.requestId);
                 }
                 return response;
             } catch (error) {
-                if (gemini) emit('eve:ai-error', { url, error, timestamp: Date.now() });
+                if (prepared.gemini) emit('eve:ai-error', { url: prepared.url, requestId: prepared.requestId, error, timestamp: Date.now() });
                 throw error;
             } finally {
-                if (gemini && oneShotContext) clearOneShotContext();
+                if (prepared.gemini && oneShotContext) clearOneShotContext();
             }
         };
     }
 
     function restoreFetch() {
-        if (originalFetch) {
-            window.fetch = originalFetch;
-            originalFetch = null;
+        if (nativeFetch) {
+            window.fetch = nativeFetch;
+            nativeFetch = null;
         }
     }
 
     function setOneShotContext(text, ttlMs) {
-        oneShotContext = String(text || '').trim();
-        oneShotExpiresAt = Date.now() + Math.max(1000, Number(ttlMs) || 30000);
+        oneShotContext = cleanText(text, config.maxContextCharacters);
+        oneShotExpiresAt = Date.now() + Math.max(1000, Number(ttlMs) || config.oneShotTtlMs);
     }
 
     function clearOneShotContext() {
@@ -195,8 +338,7 @@
     }
 
     function hasOpenChat() {
-        const input = document.getElementById('api-chat-input');
-        return Boolean(input && input.offsetParent !== null);
+        return getCurrentChat().open;
     }
 
     async function requestProactiveMessage(payload) {
@@ -217,14 +359,13 @@
             activity && activity.label ? `角色目前狀態：${activity.label}` : '',
             payload && payload.reason ? `觸發情境：${payload.reason}` : '',
             context || ''
-        ].filter(Boolean).join('\n'), 45000);
+        ].filter(Boolean).join('\n'));
 
         emit('eve:proactive-dispatch-start', { payload: clone(payload || {}) });
         try {
-            if (smartReply) await smartReply();
-            else button.click();
-            emit('eve:proactive-dispatch-complete', { payload: clone(payload || {}) });
-            return { sent: true };
+            const result = smartReply ? await smartReply() : button.click();
+            emit('eve:proactive-dispatch-complete', { payload: clone(payload || {}), result: clone(result) });
+            return { sent: true, result };
         } catch (error) {
             clearOneShotContext();
             emit('eve:proactive-dispatch-error', { payload: clone(payload || {}), error });
@@ -233,12 +374,30 @@
         }
     }
 
+    function messageFingerprint(text) {
+        return cleanText(text, 500) + '|' + getCurrentChat().scope;
+    }
+
     function markUserMessage(detail) {
-        if (!config.trackUserMessages) return;
+        if (!config.trackUserMessages) return false;
+        const text = cleanText(detail && detail.text, 100000);
+        if (!text) return false;
+
+        const fingerprint = messageFingerprint(text);
+        const previous = recentMessageFingerprints.get(fingerprint) || 0;
+        if (Date.now() - previous < 1200) return false;
+        recentMessageFingerprints.set(fingerprint, Date.now());
+        for (const [key, timestamp] of recentMessageFingerprints) {
+            if (Date.now() - timestamp > 10000) recentMessageFingerprints.delete(key);
+        }
+
+        latestUserMessage = text;
+        latestUserMessageAt = Date.now();
         if (window.EVEProactive && typeof window.EVEProactive.markUserInteraction === 'function') {
             window.EVEProactive.markUserInteraction();
         }
-        emit('eve:user-message-sent', Object.assign({ timestamp: Date.now() }, detail || {}));
+        emit('eve:user-message-sent', Object.assign({ timestamp: Date.now(), text, chat: getCurrentChat() }, detail || {}));
+        return true;
     }
 
     function installMessageTracking() {
@@ -246,10 +405,10 @@
             const target = event.target && event.target.closest ? event.target.closest('button') : null;
             if (!target) return;
             const onclick = String(target.getAttribute('onclick') || '');
-            if (/send.*message|sendMessage|sendApiMessage/i.test(onclick)) {
-                const input = document.getElementById('api-chat-input');
-                if (input && input.value.trim()) markUserMessage({ text: input.value.trim(), source: 'button' });
-            }
+            const looksLikeSend = /send.*message|sendMessage|sendApiMessage/i.test(onclick) || target.matches('[aria-label*="发送"], [title*="发送"], .send-btn, .chat-send-btn');
+            if (!looksLikeSend) return;
+            const input = document.getElementById('api-chat-input');
+            if (input && input.value.trim()) markUserMessage({ text: input.value.trim(), source: 'button' });
         }, true);
 
         on(document, 'keydown', event => {
@@ -277,14 +436,14 @@
     }
 
     function registerBuiltIns() {
-        registerContextProvider('weather', () => {
+        if (!providers.has('weather')) registerContextProvider('weather', () => {
             if (!config.injectWeather) return '';
             return window.EVEWeather && typeof window.EVEWeather.getPromptContext === 'function'
                 ? window.EVEWeather.getPromptContext()
                 : '';
         }, { priority: 20 });
 
-        registerContextProvider('activity', () => {
+        if (!providers.has('activity')) registerContextProvider('activity', () => {
             if (!config.injectActivity) return '';
             return window.EVEProactive && typeof window.EVEProactive.getPromptContext === 'function'
                 ? window.EVEProactive.getPromptContext()
@@ -296,25 +455,33 @@
         return {
             version: VERSION,
             initialized,
-            fetchHookInstalled: Boolean(originalFetch),
+            settings: Object.assign({}, config),
+            fetchHookInstalled: Boolean(nativeFetch),
             geminiEndpointPresent: document.documentElement.innerHTML.includes('generativelanguage.googleapis.com'),
             smartReplyFunction: typeof window.triggerSmartReply === 'function',
             smartReplyButton: Boolean(findSmartReplyButton()),
+            chat: getCurrentChat(),
             chatInput: Boolean(document.getElementById('api-chat-input')),
             cityInput: Boolean(document.getElementById('character-city-name')),
             prototypeCityInput: Boolean(document.getElementById('character-city-prototype')),
             weatherModule: Boolean(window.EVEWeather),
             proactiveModule: Boolean(window.EVEProactive),
+            memoryModule: Boolean(window.EVEMemory),
+            timelineModule: Boolean(window.EVETimeline),
+            relationshipModule: Boolean(window.EVERelationship),
+            healthModule: Boolean(window.EVEHealth),
             contextProviders: Array.from(providers.keys()),
+            contextLength: collectContext({ diagnostics: true }).length,
             lastGeminiRequestAt,
-            lastGeminiResponseAt
+            lastGeminiResponseAt,
+            latestUserMessageAt
         };
     }
 
     function configure(next) {
         const result = saveConfig(next);
-        if (result.autoEnableProactive && window.EVEProactive && typeof window.EVEProactive.configure === 'function') {
-            window.EVEProactive.configure({ enabled: true });
+        if (window.EVEProactive && typeof window.EVEProactive.configure === 'function') {
+            window.EVEProactive.configure({ enabled: Boolean(result.autoEnableProactive) });
         }
         emit('eve:adapter-settings-updated', { settings: clone(result) });
         return result;
@@ -332,8 +499,8 @@
         on(window, 'eve:proactive-trigger', event => requestProactiveMessage(event.detail || {}));
         on(window, 'eve:proactive-message-test', event => requestProactiveMessage(event.detail || {}));
 
-        if (config.autoEnableProactive && window.EVEProactive && typeof window.EVEProactive.configure === 'function') {
-            window.EVEProactive.configure({ enabled: true });
+        if (window.EVEProactive && typeof window.EVEProactive.configure === 'function') {
+            window.EVEProactive.configure({ enabled: Boolean(config.autoEnableProactive) });
         }
 
         window.EVE = window.EVE || {};
@@ -349,6 +516,7 @@
         });
         restoreFetch();
         providers.clear();
+        recentMessageFingerprints.clear();
         clearOneShotContext();
         initialized = false;
     }
@@ -360,12 +528,15 @@
         configure,
         getSettings: () => Object.assign({}, config),
         getDiagnostics,
+        getCurrentChat,
         registerContextProvider,
         unregisterContextProvider,
+        setContextProviderEnabled,
         getPromptContext: collectContext,
         injectGeminiContext,
         setOneShotContext,
         clearOneShotContext,
+        markUserMessage,
         requestProactiveMessage,
         triggerProactiveNow() {
             if (window.EVEProactive && typeof window.EVEProactive.triggerNow === 'function') {
