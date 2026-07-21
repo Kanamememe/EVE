@@ -1,9 +1,0 @@
-EVEChat v0.6.0
-- Stabilized adapter integration.
-- Added Request-object fetch injection.
-- Added streaming Gemini response parsing.
-- Added context deduplication and size cap.
-- Added message event deduplication.
-- Added safe storage handling.
-- Disabled proactive auto-enable by default.
-- Added EVEHealth runtime diagnostics.
