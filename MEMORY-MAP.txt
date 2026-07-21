@@ -1,0 +1,41 @@
+EVE Chat Memory Map v0.1
+========================
+
+資料層
+- localStorage: eve_memory_store_v1
+- facts: 長期事實、喜好、身份、目標
+- events: 日期事件與重要生活事件
+- moments: 使用者與角色的共同對話片段
+
+事件流
+1. 使用者送出訊息
+2. adapter.js 派發 eve:user-message-sent
+3. memory.js 自動辨識可保存的資料
+4. Gemini 請求前，adapter.js 呼叫 memory Context Provider
+5. 記憶依角色範圍、重要度、近期程度及關鍵字排序
+6. Gemini 回覆後，adapter.js 從 Response clone 派發 eve:ai-message-received
+7. memory.js 將一問一答保存為共同經歷
+
+角色隔離
+- API 聊天標題存在時：character:<角色名稱>
+- 無法判斷角色時：global
+- global 記憶可供所有角色使用
+
+公開 API
+- EVEMemory.addFact({...})
+- EVEMemory.addEvent({...})
+- EVEMemory.addMoment({...})
+- EVEMemory.extractFacts(text)
+- EVEMemory.retrieve({...})
+- EVEMemory.getPromptContext({...})
+- EVEMemory.remove(id)
+- EVEMemory.clear({ scope })
+- EVEMemory.exportData()
+- EVEMemory.importData(data, { replace })
+- EVEMemory.getStats()
+
+Console 測試
+EVEMemory.getStats()
+EVEMemory.addFact({ type: 'preference', key: 'food', value: '使用者喜歡壽司', importance: 4 })
+EVEMemory.addEvent({ title: '週末要去東京', importance: 4 })
+EVEMemory.getPromptContext()

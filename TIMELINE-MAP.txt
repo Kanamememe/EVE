@@ -1,0 +1,30 @@
+EVE Chat Timeline Map v0.1
+==========================
+
+模組：js/timeline.js
+Adapter Context Provider：timeline（priority 50）
+
+自動監聽：
+- eve:user-message-sent
+- eve:ai-message-received
+- eve:proactive-dispatch-complete
+- eve:environment-updated
+- eve:weather-updated
+- eve:location-updated
+- eve:memory-added
+
+主要功能：
+- 每個角色分開保存時間線
+- 第一次聊天與第一次主動訊息里程碑
+- 30 分鐘內的訊息合併為同一次對話事件
+- 重要對話提高權重
+- 天氣／地點變動事件
+- 重要事件同步至 Memory
+- Timeline 重要事件自動注入 Gemini Prompt
+- JSON 匯入、匯出、刪除與清除
+
+Console 測試：
+EVETimeline.getStats()
+EVETimeline.list({ limit: 20 })
+EVETimeline.getPromptContext()
+EVETimeline.addEvent({ title: '一起去看電影', importance: 4 })
