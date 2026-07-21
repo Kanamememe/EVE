@@ -1,0 +1,27 @@
+EVE Chat v0.9 验证结果
+======================
+
+静态检查：
+- 所有 js/*.js 通过 node --check。
+- eve-sw.js 通过 node --check。
+- index.html 的 script 标签数量平衡。
+- index.html 中 3 个内嵌 JavaScript 全部通过 node --check。
+- 所有本地模块引用各出现一次且顺序正确。
+- 未包含 relationship.js。
+
+隔离浏览器功能测试：
+- EVEMoments 成功安装角色回复 Hook。
+- EVEMoments 成功安装批量评论 Hook。
+- JSON 代码块形式的 AI 回复成功解析为纯文本。
+- 用户评论后的角色回复成功保存。
+- 原生批量评论无输出时，后备评论成功生成并保存。
+- 动态互动事件成功派发且不会重复派发。
+- EVENotifications 测试通知成功通过模拟 Service Worker/Notification 接口。
+- 设置页成功显示“动态回复增强”和“后台通知”。
+- 隔离测试未捕获 JavaScript 页面错误。
+
+未能离线验证：
+- 使用者真实 Gemini API Key 的在线生成。
+- GitHub Pages 上 Open-Meteo 联网请求。
+- iPhone 实机通知权限与系统后台调度。
+- 远程 Web Push（本版不含推送服务器）。
