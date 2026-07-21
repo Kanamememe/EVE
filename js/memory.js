@@ -1,5 +1,5 @@
 /**
- * EVE Chat Memory Module v0.1.0
+ * EVE Chat Memory Module v0.8.0
  * Long-term facts, recent events, conversation moments and prompt retrieval.
  */
 (function (window, document) {
@@ -7,7 +7,7 @@
 
     if (window.EVEMemory && window.EVEMemory.version) return;
 
-    const VERSION = '0.1.0';
+    const VERSION = '0.8.0';
     const STORE_KEY = 'eve_memory_store_v1';
     const SETTINGS_KEY = 'eve_memory_settings_v1';
     const MAX_TEXT = 600;
@@ -112,6 +112,8 @@
     }
 
     function currentScope() {
+        const adapterScope = window.EVEAdapter?.getCurrentChat?.().scope;
+        if (adapterScope && adapterScope !== 'global') return adapterScope;
         const title = document.getElementById('api-chat-title');
         const visibleTitle = title && title.offsetParent !== null ? cleanText(title.textContent, 100) : '';
         if (visibleTitle) return `character:${slug(visibleTitle)}`;
@@ -125,6 +127,11 @@
     function normalizeTags(tags) {
         const values = Array.isArray(tags) ? tags : String(tags || '').split(',');
         return Array.from(new Set(values.map(tag => slug(tag)).filter(Boolean))).slice(0, 20);
+    }
+
+    function normalizeSourceIds(ids) {
+        const values = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+        return Array.from(new Set(values.map(id => cleanText(id, 200)).filter(Boolean))).slice(0, 40);
     }
 
     function dedupeKey(type, key, value, scope) {
@@ -158,6 +165,7 @@
             existing.seenCount = (existing.seenCount || 1) + 1;
             existing.importance = Math.max(existing.importance || 1, clamp(item.importance || 3, 1, 5));
             existing.tags = Array.from(new Set([...(existing.tags || []), ...normalizeTags(item.tags)]));
+            existing.sourceMessageIds = Array.from(new Set([...(existing.sourceMessageIds || []), ...normalizeSourceIds(item.sourceMessageIds)]));
             save();
             emit('eve:memory-updated', { kind: 'fact', item: clone(existing) });
             return clone(existing);
@@ -174,6 +182,7 @@
             importance: clamp(item.importance || 3, 1, 5),
             confidence: clamp(item.confidence == null ? 0.8 : item.confidence, 0, 1),
             tags: normalizeTags(item.tags),
+            sourceMessageIds: normalizeSourceIds(item.sourceMessageIds),
             createdAt: now,
             updatedAt: now,
             lastSeenAt: now,
@@ -201,6 +210,7 @@
             existing.updatedAt = Date.now();
             existing.importance = Math.max(existing.importance, clamp(item.importance || 3, 1, 5));
             if (item.description) existing.description = cleanText(item.description);
+            existing.sourceMessageIds = Array.from(new Set([...(existing.sourceMessageIds || []), ...normalizeSourceIds(item.sourceMessageIds)]));
             save();
             emit('eve:memory-updated', { kind: 'event', item: clone(existing) });
             return clone(existing);
@@ -213,6 +223,8 @@
             title,
             description: cleanText(item.description || '', 500),
             category: slug(item.category || 'life-event'),
+            source: cleanText(item.source || 'manual', 60),
+            sourceMessageIds: normalizeSourceIds(item.sourceMessageIds),
             importance: clamp(item.importance || 3, 1, 5),
             tags: normalizeTags(item.tags),
             occurredAt,
@@ -242,6 +254,7 @@
             summary: cleanText(item.summary || summarizeMoment(userText, assistantText), 300),
             importance: clamp(item.importance || estimateImportance(`${userText} ${assistantText}`), 1, 5),
             tags: normalizeTags(item.tags),
+            sourceMessageIds: normalizeSourceIds(item.sourceMessageIds),
             createdAt: Date.now(),
             archived: false
         };
@@ -251,7 +264,13 @@
             existing.userText === moment.userText &&
             Math.abs(existing.createdAt - moment.createdAt) < 10 * 60 * 1000
         );
-        if (duplicate) return clone(duplicate);
+        if (duplicate) {
+            duplicate.sourceMessageIds = Array.from(new Set([...(duplicate.sourceMessageIds || []), ...moment.sourceMessageIds]));
+            duplicate.assistantText ||= moment.assistantText;
+            duplicate.summary ||= moment.summary;
+            save();
+            return clone(duplicate);
+        }
 
         store.moments.push(moment);
         trimStore();
@@ -305,7 +324,8 @@
                     source: options.source || 'auto-user-message',
                     importance: pattern.type === 'birthday' || pattern.type === 'identity' ? 4 : 3,
                     confidence: 0.72,
-                    tags: ['auto-extracted']
+                    tags: ['auto-extracted'],
+                    sourceMessageIds: options.sourceMessageIds
                 }));
             }
         }
@@ -325,7 +345,8 @@
                     category: 'mentioned-event',
                     source: options.source || 'auto-user-message',
                     importance: estimateImportance(match[0]),
-                    tags: ['auto-extracted']
+                    tags: ['auto-extracted'],
+                    sourceMessageIds: options.sourceMessageIds
                 }));
             }
         }
@@ -396,7 +417,7 @@
     function getPromptContext(meta = {}) {
         if (!settings.enabled) return '';
         const query = cleanText(meta.userText || meta.query || pendingUserMessage?.text || '', 500);
-        const result = retrieve({ query, scope: meta.scope });
+        const result = retrieve({ query, scope: meta.scope || meta.chat?.scope });
         const lines = [];
 
         if (result.facts.length) {
@@ -415,6 +436,127 @@
 
         lines.push('請自然運用記憶，不要逐條背誦，不要聲稱擁有資料庫，也不要把不確定的記憶當成絕對事實。');
         return lines.join('\n');
+    }
+
+    function removeByMessage(messageId, text) {
+        const id = cleanText(messageId, 200);
+        const sample = cleanText(text, 1000);
+        let removed = 0;
+
+        // Facts can be supported by more than one message.  When one source is
+        // recalled, keep the fact only if another independent source remains.
+        store.facts = store.facts.filter(item => {
+            const sources = normalizeSourceIds(item.sourceMessageIds);
+            if (id && sources.includes(id)) {
+                const remaining = sources.filter(source => source !== id);
+                if (remaining.length) {
+                    item.sourceMessageIds = remaining;
+                    return true;
+                }
+                removed += 1;
+                return false;
+            }
+            if (!sources.length && sample.length >= 6) {
+                const value = cleanText(item.value, 1200);
+                const short = sample.slice(0, 180);
+                if (value && (value === sample || value.includes(short))) {
+                    removed += 1;
+                    return false;
+                }
+            }
+            return true;
+        });
+
+        // Events and conversation moments contain the wording/context of all
+        // their source messages.  If any source message is recalled, remove the
+        // whole derived record so the recalled text cannot remain in prompts.
+        function purgeDerived(items) {
+            return items.filter(item => {
+                const sources = normalizeSourceIds(item.sourceMessageIds);
+                if (id && sources.includes(id)) {
+                    removed += 1;
+                    return false;
+                }
+                if (!sources.length && sample.length >= 6) {
+                    const fields = [item.title,item.description,item.userText,item.assistantText,item.summary]
+                        .map(value => cleanText(value, 1200));
+                    const short = sample.slice(0, 180);
+                    if (fields.some(value => value && (value === sample || value.includes(short)))) {
+                        removed += 1;
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+        store.events = purgeDerived(store.events);
+        store.moments = purgeDerived(store.moments);
+
+        if (removed) {
+            save();
+            emit('eve:memory-purged-by-message', { messageId:id, removed });
+        }
+        return removed;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        })[char]);
+    }
+
+    function openManager() {
+        document.getElementById('eve-memory-manager')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'eve-memory-manager';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:999996;background:rgba(0,0,0,.48);display:flex;align-items:center;justify-content:center;padding:14px';
+        const panel = document.createElement('div');
+        panel.style.cssText = 'width:min(680px,100%);max-height:90vh;display:flex;flex-direction:column;background:var(--secondary-bg,#fff);color:var(--text-primary,#222);border-radius:18px;overflow:hidden;box-shadow:0 15px 50px #0004';
+        panel.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #ddd">
+            <b style="flex:1">扩展记忆管理</b>
+            <input data-search placeholder="搜索" style="width:150px;padding:7px;border:1px solid #ccc;border-radius:8px">
+            <button data-add type="button">＋</button><button data-close type="button">✕</button>
+          </div>
+          <div data-list style="overflow:auto;padding:8px 14px;min-height:180px"></div>
+          <div style="padding:12px 16px;border-top:1px solid #ddd;display:flex;justify-content:space-between">
+            <small>只显示当前角色与全局扩展记忆</small><button data-clear type="button" style="color:#c33">清空当前角色</button>
+          </div>`;
+        overlay.append(panel);
+        document.body.append(overlay);
+
+        const render = () => {
+            const query = cleanText(panel.querySelector('[data-search]').value, 100).toLowerCase();
+            const scope = currentScope();
+            const items = [
+                ...store.facts.map(item => ({ ...item, kind:'长期', label:item.value })),
+                ...store.events.map(item => ({ ...item, kind:'事件', label:item.title })),
+                ...store.moments.map(item => ({ ...item, kind:'对话', label:item.summary }))
+            ].filter(item => item.scope === scope || item.scope === 'global')
+             .filter(item => !query || cleanText(item.label, 1200).toLowerCase().includes(query))
+             .sort((a,b) => (b.updatedAt || b.occurredAt || b.createdAt) - (a.updatedAt || a.occurredAt || a.createdAt));
+            const list = panel.querySelector('[data-list]');
+            list.innerHTML = '';
+            for (const item of items) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:9px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #ddd';
+                row.innerHTML = `<small style="min-width:36px;opacity:.6">${item.kind}</small><span style="flex:1;line-height:1.45">${escapeHtml(item.label)}</span><button type="button">删除</button>`;
+                row.querySelector('button').onclick = () => { remove(item.id); render(); };
+                list.append(row);
+            }
+            if (!items.length) list.innerHTML = '<div style="padding:36px;text-align:center;opacity:.6">暂无扩展记忆</div>';
+        };
+        panel.querySelector('[data-search]').oninput = render;
+        panel.querySelector('[data-close]').onclick = () => overlay.remove();
+        overlay.onclick = event => { if (event.target === overlay) overlay.remove(); };
+        panel.querySelector('[data-add]').onclick = () => {
+            const value = prompt('要让角色记住什么？');
+            if (value) { addFact({ value, importance:4, source:'manual' }); render(); }
+        };
+        panel.querySelector('[data-clear]').onclick = () => {
+            if (confirm('确定清空当前角色的扩展记忆？')) { clear({ scope:currentScope() }); render(); }
+        };
+        render();
     }
 
     function remove(id) {
@@ -505,19 +647,39 @@
 
         on(window, 'eve:adapter-ready', registerWithAdapter);
         on(window, 'eve:user-message-sent', event => {
-            const text = cleanText(event.detail && event.detail.text, 1000);
+            const text = cleanText(event.detail?.text, 1000);
             if (!text) return;
-            pendingUserMessage = { text, scope: currentScope(), at: Date.now() };
-            extractFacts(text, { scope: pendingUserMessage.scope, source: 'user-message' });
+            pendingUserMessage = {
+                text,
+                scope: event.detail?.chat?.scope || currentScope(),
+                at: Date.now(),
+                messageId: cleanText(event.detail?.messageId, 200)
+            };
         });
-        on(window, 'eve:ai-message-received', event => {
-            const assistantText = cleanText(event.detail && event.detail.text, 1000);
+        on(window, 'eve:user-message-committed', event => {
+            const text = cleanText(event.detail?.text, 1000);
+            if (!text) return;
+            pendingUserMessage = {
+                text,
+                scope: event.detail?.scope || currentScope(),
+                at: Date.now(),
+                messageId: cleanText(event.detail?.messageId, 200)
+            };
+            extractFacts(text, {
+                scope: pendingUserMessage.scope,
+                source: 'user-message',
+                sourceMessageIds: [pendingUserMessage.messageId]
+            });
+        });
+        on(window, 'eve:ai-message-committed', event => {
+            const assistantText = cleanText(event.detail?.text, 1000);
             if (!settings.recordConversationMoments || (!pendingUserMessage && !assistantText)) return;
             const user = pendingUserMessage;
             addMoment({
-                scope: user?.scope || currentScope(),
+                scope: user?.scope || event.detail?.scope || currentScope(),
                 userText: user?.text || '',
                 assistantText,
+                sourceMessageIds: [user?.messageId, event.detail?.messageId].filter(Boolean),
                 importance: estimateImportance(`${user?.text || ''} ${assistantText}`)
             });
             pendingUserMessage = null;
@@ -550,6 +712,8 @@
         retrieve,
         getPromptContext,
         remove,
+        removeByMessage,
+        openManager,
         clear,
         exportData,
         importData,

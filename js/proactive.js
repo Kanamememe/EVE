@@ -1,692 +1,230 @@
 /**
- * EVE Chat - AI 主動聊天與生活狀態模組
- * 檔名：proactive.js
- *
- * 依賴：
- * - weather.js（可選，但建議先載入）
- *
- * 功能：
- * 1. 根據角色所在地時間判斷睡覺、吃飯、工作、休息等狀態
- * 2. 支援固定間隔與隨機間隔主動訊息
- * 3. 支援延遲發送
- * 4. 預設不直接修改 EVE Chat 原本聊天邏輯
- * 5. 透過事件或 Adapter 與原本聊天系統串接
- *
- * 在 index.html 的 </body> 前依序加入：
- * <script src="js/weather.js"></script>
- * <script src="js/proactive.js"></script>
+ * EVE Chat Proactive Module v0.8.0
+ * Fixed/random proactive-message scheduling with quiet hours, idle checks,
+ * daily limits, local activity and catch-up after browser suspension.
  */
-
 (function (window, document) {
-    'use strict';
+  'use strict';
+  if (window.EVEProactive?.version) return;
 
-    const SETTINGS_KEY = 'eve_proactive_settings_v1';
-    const STATE_KEY = 'eve_proactive_state_v1';
-    const LOG_KEY = 'eve_proactive_log_v1';
+  const VERSION = '0.8.0';
+  const SETTINGS_KEY = 'eve_proactive_settings_v2';
+  const STATE_KEY = 'eve_proactive_state_v2';
+  const LOG_KEY = 'eve_proactive_log_v2';
+  const MINUTE = 60000;
+  const DEFAULTS = Object.freeze({
+    enabled: false,
+    intervalMode: 'random',
+    fixedIntervalMinutes: 180,
+    randomMinMinutes: 90,
+    randomMaxMinutes: 300,
+    idleRequiredMinutes: 45,
+    delayMinMinutes: 1,
+    delayMaxMinutes: 8,
+    quietHoursEnabled: true,
+    quietStartHour: 0,
+    quietEndHour: 8,
+    dailyLimit: 4,
+    onlyWhenChatOpen: false,
+    catchUpAfterResume: true,
+    includeEnvironment: true,
+    debug: false
+  });
+  const ACTIVITIES = Object.freeze([
+    { id:'sleeping', icon:'🌙', label:'睡觉中', start:0, end:7, allow:false, prompt:'角色目前正在睡觉。' },
+    { id:'waking', icon:'☀️', label:'刚起床', start:7, end:9, allow:true, prompt:'角色刚起床，状态有些慵懒。' },
+    { id:'morning', icon:'💼', label:'忙碌中', start:9, end:12, allow:true, prompt:'角色正在处理上午的工作或日常安排。' },
+    { id:'lunch', icon:'🍜', label:'午餐时间', start:12, end:14, allow:true, prompt:'角色正在吃午餐或短暂休息。' },
+    { id:'afternoon', icon:'☕', label:'正在活动', start:14, end:18, allow:true, prompt:'角色正在进行下午的工作、学习或外出活动。' },
+    { id:'dinner', icon:'🍽️', label:'晚餐时间', start:18, end:20, allow:true, prompt:'角色正在吃晚餐，或刚结束晚餐。' },
+    { id:'relaxing', icon:'🏠', label:'休息中', start:20, end:23, allow:true, prompt:'角色已经结束白天的事情，正在休息。' },
+    { id:'late-night', icon:'🌃', label:'准备睡觉', start:23, end:24, allow:true, prompt:'时间已晚，角色正在放松并准备睡觉。' }
+  ]);
 
-    const DEFAULT_SETTINGS = {
-        enabled: false,
+  let settings = load(SETTINGS_KEY, DEFAULTS);
+  let state = load(STATE_KEY, {
+    nextDueAt: 0, pendingAt: 0, lastUserInteractionAt: Date.now(), lastSentAt: 0,
+    dailyDate: '', dailyCount: 0, lastActivityId: ''
+  });
+  let timer = null;
+  let delayTimer = null;
+  let activityTimer = null;
+  let currentActivity = null;
+  let initialized = false;
+  const disposers = [];
 
-        // fixed：固定間隔；random：隨機間隔
-        intervalMode: 'random',
-        fixedIntervalMinutes: 180,
-        randomMinMinutes: 90,
-        randomMaxMinutes: 300,
+  function clone(value) { try { return window.structuredClone ? window.structuredClone(value) : JSON.parse(JSON.stringify(value)); } catch (_) { return value; } }
+  function load(key, fallback) { try { const x = JSON.parse(localStorage.getItem(key) || 'null'); return x && typeof x === 'object' ? Object.assign(clone(fallback), x) : clone(fallback); } catch (_) { return clone(fallback); } }
+  function persist() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (_) {} }
+  function emit(name, detail = {}) { try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} }
+  function on(target, name, handler, options) { target.addEventListener(name, handler, options); disposers.push(() => target.removeEventListener(name, handler, options)); }
+  function log(...args) { if (settings.debug) console.log('[EVEProactive]', ...args); }
+  function clean(value, max = 1000) { return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max); }
+  function clamp(value, min, max, fallback) { const n = Number(value); return Math.max(min, Math.min(max, Number.isFinite(n) ? n : fallback)); }
+  function randomInt(min, max) { const a = Math.ceil(Math.min(min, max)), b = Math.floor(Math.max(min, max)); return Math.floor(Math.random() * (b - a + 1)) + a; }
 
-        // 觸發後額外延遲多久才真正發送
-        delayMinMinutes: 1,
-        delayMaxMinutes: 8,
-
-        // 使用者多久沒有互動後才允許主動聊天
-        idleRequiredMinutes: 60,
-
-        // 夜間避免打擾
-        quietHoursEnabled: true,
-        quietStartHour: 0,
-        quietEndHour: 8,
-
-        // 每天最多主動發送次數
-        dailyLimit: 4,
-
-        // 是否將時間、天氣、生活狀態交給 AI
-        includeEnvironment: true,
-        includeActivity: true,
-
-        // 是否自動更新狀態
-        statusEnabled: true,
-        statusRefreshMinutes: 5
+  function getEnvironment() { return window.EVEWeather?.getEnvironment?.() || window.EVE?.environment || null; }
+  function localHour() {
+    const time = getEnvironment()?.character?.localTime || getEnvironment()?.localTime;
+    const match = String(time || '').match(/^(\d{1,2}):/);
+    return match ? Math.max(0, Math.min(23, Number(match[1]))) : new Date().getHours();
+  }
+  function localDate() {
+    const date = getEnvironment()?.character?.localDate || getEnvironment()?.localDate;
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : new Date().toISOString().slice(0, 10);
+  }
+  function baseActivity() { const hour = localHour(); return ACTIVITIES.find(x => hour >= x.start && hour < x.end) || ACTIVITIES[0]; }
+  function updateActivity(force = false) {
+    const next = Object.assign({}, baseActivity());
+    const weather = getEnvironment()?.character || getEnvironment();
+    const label = String(weather?.weather || '');
+    if (/雨|雷/.test(label) && ['afternoon','relaxing'].includes(next.id)) {
+      next.icon = '🌧️'; next.label = '在室内躲雨'; next.prompt += ' 外面正在下雨，因此角色更可能待在室内。';
+    }
+    if (/雪/.test(label)) next.prompt += ' 外面正在下雪。';
+    const changed = !currentActivity || currentActivity.id !== next.id || currentActivity.label !== next.label;
+    currentActivity = next; state.lastActivityId = next.id; persist();
+    window.EVE ||= {}; window.EVE.activity = clone(next);
+    if (changed || force) emit('eve:activity-updated', { activity: clone(next) });
+    return clone(next);
+  }
+  function getActivity() { return currentActivity ? clone(currentActivity) : updateActivity(); }
+  function resetDaily() { if (state.dailyDate !== localDate()) { state.dailyDate = localDate(); state.dailyCount = 0; persist(); } }
+  function quiet() {
+    if (!settings.quietHoursEnabled) return false;
+    const h = localHour(), start = settings.quietStartHour, end = settings.quietEndHour;
+    if (start === end) return false;
+    return start < end ? h >= start && h < end : h >= start || h < end;
+  }
+  function currentChatOpen() { return Boolean(window.EVEAdapter?.getCurrentChat?.().open || document.getElementById('api-chat-input')?.offsetParent); }
+  function eligibility(options = {}) {
+    resetDaily(); const activity = getActivity();
+    if (!settings.enabled && !options.force) return { allowed:false, reason:'disabled', activity };
+    if (state.dailyCount >= settings.dailyLimit && !options.force) return { allowed:false, reason:'daily-limit', activity };
+    if (quiet() && !options.force) return { allowed:false, reason:'quiet-hours', activity };
+    if (!activity.allow && !options.force) return { allowed:false, reason:'sleeping', activity };
+    if (settings.onlyWhenChatOpen && !currentChatOpen() && !options.force) return { allowed:false, reason:'chat-closed', activity };
+    const idle = Date.now() - Number(state.lastUserInteractionAt || 0);
+    if (idle < settings.idleRequiredMinutes * MINUTE && !options.force) return { allowed:false, reason:'not-idle', activity, idleMinutes:Math.floor(idle / MINUTE) };
+    return { allowed:true, reason:'eligible', activity, idleMinutes:Math.floor(idle / MINUTE) };
+  }
+  function intervalMinutes() { return settings.intervalMode === 'fixed' ? settings.fixedIntervalMinutes : randomInt(settings.randomMinMinutes, settings.randomMaxMinutes); }
+  function schedule(minutes = intervalMinutes()) {
+    clearTimeout(timer); timer = null;
+    if (!settings.enabled) { state.nextDueAt = 0; persist(); return 0; }
+    state.nextDueAt = Date.now() + Math.max(1, minutes) * MINUTE; persist();
+    timer = setTimeout(checkDue, Math.min(2147483647, Math.max(1000, state.nextDueAt - Date.now())));
+    emit('eve:proactive-scheduled', { nextDueAt: state.nextDueAt, minutes });
+    return state.nextDueAt;
+  }
+  async function dispatch(payload) {
+    const adapter = window.EVEProactiveAdapter;
+    // Use one dispatch path only.  Earlier builds emitted the request event and
+    // called the adapter directly, which could create two proactive replies.
+    if (!adapter?.sendMessage) {
+      emit('eve:proactive-message-request', payload);
+      return { sent:false, reason:'adapter-not-ready' };
+    }
+    emit('eve:proactive-dispatch-start', { payload:clone(payload) });
+    try {
+      const result = await adapter.sendMessage(payload);
+      if (result?.sent !== false) {
+        resetDaily(); state.lastSentAt = Date.now(); state.dailyCount += 1; persist();
+        appendLog({ at:Date.now(), success:true, payload:{ reason:payload.reason, activity:payload.activity?.id } });
+      }
+      emit('eve:proactive-dispatch-complete', { payload:clone(payload), result:clone(result) });
+      return result;
+    } catch (error) {
+      appendLog({ at:Date.now(), success:false, error:String(error.message || error) });
+      emit('eve:proactive-dispatch-error', { payload:clone(payload), error });
+      return { sent:false, reason:'dispatch-error', error };
+    }
+  }
+  function appendLog(entry) {
+    const logData = load(LOG_KEY, { entries:[] }); logData.entries ||= []; logData.entries.unshift(entry); logData.entries = logData.entries.slice(0, 100);
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(logData)); } catch (_) {}
+  }
+  function payload(reason, check) {
+    return {
+      id:`proactive_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+      reason, createdAt:new Date().toISOString(), activity:check.activity,
+      environment:settings.includeEnvironment ? getEnvironment() : null,
+      idleMinutes:check.idleMinutes,
+      promptContext:[
+        '【主动聊天情境】', `角色当前状态：${check.activity.icon} ${check.activity.label}`, check.activity.prompt,
+        '请根据角色人设与最近聊天内容，自然地主动发送一则简短消息。',
+        '不要提到系统、排程、触发器或“主动聊天功能”；不要每次都用问句。'
+      ].join('\n')
     };
-
-    const ACTIVITIES = [
-        {
-            id: 'sleeping',
-            icon: '🌙',
-            label: '睡覺中',
-            start: 0,
-            end: 7,
-            prompt: '角色目前正在睡覺。除非是特殊情況，暫時不要主動發送訊息。'
-        },
-        {
-            id: 'waking',
-            icon: '☀️',
-            label: '剛起床',
-            start: 7,
-            end: 9,
-            prompt: '角色剛起床，狀態還有些慵懶。'
-        },
-        {
-            id: 'working',
-            icon: '💼',
-            label: '忙碌中',
-            start: 9,
-            end: 12,
-            prompt: '角色正在處理白天的工作或日常安排。'
-        },
-        {
-            id: 'lunch',
-            icon: '🍜',
-            label: '吃午餐',
-            start: 12,
-            end: 14,
-            prompt: '角色正在吃午餐或短暫休息。'
-        },
-        {
-            id: 'afternoon',
-            icon: '☕',
-            label: '正在活動',
-            start: 14,
-            end: 18,
-            prompt: '角色正在進行下午的工作、學習或外出活動。'
-        },
-        {
-            id: 'dinner',
-            icon: '🍽️',
-            label: '吃晚餐',
-            start: 18,
-            end: 20,
-            prompt: '角色正在吃晚餐或剛結束晚餐。'
-        },
-        {
-            id: 'relaxing',
-            icon: '🏠',
-            label: '休息中',
-            start: 20,
-            end: 23,
-            prompt: '角色已經結束白天的事情，正在家中休息。'
-        },
-        {
-            id: 'late-night',
-            icon: '🌃',
-            label: '準備睡覺',
-            start: 23,
-            end: 24,
-            prompt: '時間已晚，角色正在放鬆並準備睡覺。'
-        }
-    ];
-
-    let mainTimer = null;
-    let delayedTimer = null;
-    let statusTimer = null;
-    let currentActivity = null;
-
-    function safeParse(value, fallback) {
-        try {
-            return value ? JSON.parse(value) : fallback;
-        } catch (error) {
-            console.warn('[EVEProactive] 儲存資料解析失敗：', error);
-            return fallback;
-        }
-    }
-
-    function loadSettings() {
-        return Object.assign(
-            {},
-            DEFAULT_SETTINGS,
-            safeParse(localStorage.getItem(SETTINGS_KEY), {})
-        );
-    }
-
-    function saveSettings(partialSettings) {
-        const next = Object.assign({}, loadSettings(), partialSettings || {});
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-        return next;
-    }
-
-    function loadState() {
-        return Object.assign(
-            {
-                lastUserInteractionAt: Date.now(),
-                lastProactiveAt: 0,
-                nextScheduledAt: 0,
-                dailyDate: '',
-                dailyCount: 0
-            },
-            safeParse(localStorage.getItem(STATE_KEY), {})
-        );
-    }
-
-    function saveState(partialState) {
-        const next = Object.assign({}, loadState(), partialState || {});
-        localStorage.setItem(STATE_KEY, JSON.stringify(next));
-        return next;
-    }
-
-    function randomInt(min, max) {
-        const low = Math.ceil(Math.min(min, max));
-        const high = Math.floor(Math.max(min, max));
-        return Math.floor(Math.random() * (high - low + 1)) + low;
-    }
-
-    function getEnvironment() {
-        if (window.EVEWeather && typeof window.EVEWeather.getEnvironment === 'function') {
-            return window.EVEWeather.getEnvironment();
-        }
-
-        return window.EVE && window.EVE.environment
-            ? window.EVE.environment
-            : null;
-    }
-
-    function getLocalHour() {
-        const environment = getEnvironment();
-
-        if (environment && environment.localTime) {
-            const hour = Number(String(environment.localTime).split(':')[0]);
-            if (Number.isFinite(hour)) return hour;
-        }
-
-        return new Date().getHours();
-    }
-
-    function getLocalDateKey() {
-        const environment = getEnvironment();
-        if (environment && environment.localDate) {
-            return environment.localDate;
-        }
-
-        const now = new Date();
-        return [
-            now.getFullYear(),
-            String(now.getMonth() + 1).padStart(2, '0'),
-            String(now.getDate()).padStart(2, '0')
-        ].join('-');
-    }
-
-    function getActivityByHour(hour) {
-        return ACTIVITIES.find(function (activity) {
-            return hour >= activity.start && hour < activity.end;
-        }) || ACTIVITIES[0];
-    }
-
-    function applyWeatherVariation(activity) {
-        const environment = getEnvironment();
-        if (!environment) return Object.assign({}, activity);
-
-        const next = Object.assign({}, activity);
-
-        if (
-            ['小雨', '中雨', '大雨', '陣雨', '強陣雨', '雷雨'].some(function (word) {
-                return String(environment.weather || '').includes(word);
-            }) &&
-            ['afternoon', 'relaxing'].includes(next.id)
-        ) {
-            next.icon = '🌧️';
-            next.label = '在室內躲雨';
-            next.prompt += ' 外面正在下雨，因此角色目前更可能待在室內。';
-        }
-
-        if (
-            Number(environment.temperature) <= 8 &&
-            ['waking', 'afternoon', 'relaxing'].includes(next.id)
-        ) {
-            next.label = next.id === 'waking' ? '賴床中' : '待在溫暖的地方';
-            next.prompt += ' 天氣寒冷，角色傾向待在溫暖的室內。';
-        }
-
-        if (
-            Number(environment.temperature) >= 30 &&
-            ['afternoon', 'relaxing'].includes(next.id)
-        ) {
-            next.label = '正在避暑';
-            next.prompt += ' 天氣炎熱，角色正待在較涼快的地方。';
-        }
-
-        return next;
-    }
-
-    function updateActivity() {
-        const hour = getLocalHour();
-        const activity = applyWeatherVariation(getActivityByHour(hour));
-        const changed =
-            !currentActivity ||
-            currentActivity.id !== activity.id ||
-            currentActivity.label !== activity.label;
-
-        currentActivity = Object.assign({}, activity, {
-            localHour: hour,
-            updatedAt: new Date().toISOString()
-        });
-
-        window.EVE = window.EVE || {};
-        window.EVE.activity = currentActivity;
-
-        if (changed) {
-            window.dispatchEvent(
-                new CustomEvent('eve:activity-updated', {
-                    detail: currentActivity
-                })
-            );
-        }
-
-        return currentActivity;
-    }
-
-    function isQuietHour(hour, settings) {
-        if (!settings.quietHoursEnabled) return false;
-
-        const start = Number(settings.quietStartHour);
-        const end = Number(settings.quietEndHour);
-
-        if (start === end) return false;
-
-        if (start < end) {
-            return hour >= start && hour < end;
-        }
-
-        return hour >= start || hour < end;
-    }
-
-    function normalizeDailyCount(state) {
-        const today = getLocalDateKey();
-
-        if (state.dailyDate !== today) {
-            return saveState({
-                dailyDate: today,
-                dailyCount: 0
-            });
-        }
-
-        return state;
-    }
-
-    function getIdleMinutes() {
-        const state = loadState();
-        return Math.max(
-            0,
-            Math.floor((Date.now() - Number(state.lastUserInteractionAt || 0)) / 60000)
-        );
-    }
-
-    function canTrigger() {
-        const settings = loadSettings();
-        let state = normalizeDailyCount(loadState());
-
-        if (!settings.enabled) {
-            return { allowed: false, reason: 'disabled' };
-        }
-
-        if (Number(state.dailyCount) >= Number(settings.dailyLimit)) {
-            return { allowed: false, reason: 'daily-limit' };
-        }
-
-        const activity = updateActivity();
-        if (activity.id === 'sleeping') {
-            return { allowed: false, reason: 'sleeping' };
-        }
-
-        const hour = getLocalHour();
-        if (isQuietHour(hour, settings)) {
-            return { allowed: false, reason: 'quiet-hours' };
-        }
-
-        const idleMinutes = getIdleMinutes();
-        if (idleMinutes < Number(settings.idleRequiredMinutes)) {
-            return {
-                allowed: false,
-                reason: 'not-idle-enough',
-                idleMinutes: idleMinutes
-            };
-        }
-
-        return {
-            allowed: true,
-            settings: settings,
-            state: state,
-            activity: activity,
-            idleMinutes: idleMinutes
-        };
-    }
-
-    function getNextIntervalMinutes(settings) {
-        if (settings.intervalMode === 'fixed') {
-            return Math.max(10, Number(settings.fixedIntervalMinutes) || 180);
-        }
-
-        return randomInt(
-            Math.max(10, Number(settings.randomMinMinutes) || 90),
-            Math.max(10, Number(settings.randomMaxMinutes) || 300)
-        );
-    }
-
-    function clearMainTimer() {
-        if (mainTimer) {
-            clearTimeout(mainTimer);
-            mainTimer = null;
-        }
-    }
-
-    function clearDelayedTimer() {
-        if (delayedTimer) {
-            clearTimeout(delayedTimer);
-            delayedTimer = null;
-        }
-    }
-
-    function scheduleNext() {
-        clearMainTimer();
-
-        const settings = loadSettings();
-        if (!settings.enabled) return;
-
-        const minutes = getNextIntervalMinutes(settings);
-        const nextScheduledAt = Date.now() + minutes * 60 * 1000;
-
-        saveState({ nextScheduledAt: nextScheduledAt });
-
-        mainTimer = setTimeout(function () {
-            attemptTrigger();
-        }, minutes * 60 * 1000);
-
-        console.info(`[EVEProactive] 下次檢查：約 ${minutes} 分鐘後`);
-    }
-
-    function buildPromptContext() {
-        const settings = loadSettings();
-        const activity = updateActivity();
-        const sections = [];
-
-        sections.push('【主動聊天情境】');
-        sections.push(`角色目前狀態：${activity.icon} ${activity.label}`);
-
-        if (settings.includeActivity) {
-            sections.push(activity.prompt);
-        }
-
-        if (
-            settings.includeEnvironment &&
-            window.EVEWeather &&
-            typeof window.EVEWeather.getPromptContext === 'function'
-        ) {
-            const environmentPrompt = window.EVEWeather.getPromptContext();
-            if (environmentPrompt) sections.push(environmentPrompt);
-        }
-
-        sections.push(
-            '請根據角色人設與最近聊天內容，自然地主動傳送一則短訊息。',
-            '不要提到系統、排程、天氣 API 或「主動聊天功能」。',
-            '不要每次都使用問句，也可以分享正在做的事、感受或一個生活片段。',
-            '訊息應自然且符合角色關係，不要突然過度熱情。'
-        );
-
-        return sections.join('\n');
-    }
-
-    function createPayload() {
-        return {
-            type: 'proactive-message-request',
-            createdAt: new Date().toISOString(),
-            activity: updateActivity(),
-            environment: getEnvironment(),
-            promptContext: buildPromptContext(),
-            idleMinutes: getIdleMinutes()
-        };
-    }
-
-    async function requestSend(payload) {
-        /**
-         * 最推薦的串接方式：
-         *
-         * window.EVEProactiveAdapter = {
-         *   sendMessage: async function(payload) {
-         *      // 在這裡呼叫 EVE Chat 原本的 Gemini 生成函式
-         *   }
-         * };
-         */
-        if (
-            window.EVEProactiveAdapter &&
-            typeof window.EVEProactiveAdapter.sendMessage === 'function'
-        ) {
-            return window.EVEProactiveAdapter.sendMessage(payload);
-        }
-
-        // 沒有 Adapter 時，只發出事件，不會破壞原本聊天功能。
-        window.dispatchEvent(
-            new CustomEvent('eve:proactive-message-request', {
-                detail: payload
-            })
-        );
-
-        return { queued: true, via: 'event' };
-    }
-
-    function appendLog(entry) {
-        const log = safeParse(localStorage.getItem(LOG_KEY), []);
-        log.unshift(entry);
-        localStorage.setItem(LOG_KEY, JSON.stringify(log.slice(0, 100)));
-    }
-
-    async function sendNow() {
-        const check = canTrigger();
-
-        if (!check.allowed) {
-            console.info('[EVEProactive] 本次略過：', check.reason);
-            scheduleNext();
-            return null;
-        }
-
-        const payload = createPayload();
-
-        try {
-            const result = await requestSend(payload);
-            const state = normalizeDailyCount(loadState());
-
-            saveState({
-                lastProactiveAt: Date.now(),
-                dailyDate: getLocalDateKey(),
-                dailyCount: Number(state.dailyCount || 0) + 1
-            });
-
-            appendLog({
-                success: true,
-                sentAt: new Date().toISOString(),
-                payload: payload
-            });
-
-            window.dispatchEvent(
-                new CustomEvent('eve:proactive-message-sent', {
-                    detail: {
-                        payload: payload,
-                        result: result
-                    }
-                })
-            );
-
-            return result;
-        } catch (error) {
-            console.error('[EVEProactive] 主動訊息發送失敗：', error);
-
-            appendLog({
-                success: false,
-                sentAt: new Date().toISOString(),
-                error: error.message,
-                payload: payload
-            });
-
-            throw error;
-        } finally {
-            scheduleNext();
-        }
-    }
-
-    function attemptTrigger() {
-        const check = canTrigger();
-
-        if (!check.allowed) {
-            console.info('[EVEProactive] 暫不觸發：', check.reason);
-            scheduleNext();
-            return;
-        }
-
-        const settings = loadSettings();
-        const delayMinutes = randomInt(
-            Math.max(0, Number(settings.delayMinMinutes) || 0),
-            Math.max(0, Number(settings.delayMaxMinutes) || 0)
-        );
-
-        clearDelayedTimer();
-
-        if (delayMinutes <= 0) {
-            sendNow();
-            return;
-        }
-
-        console.info(`[EVEProactive] 已觸發，將延遲 ${delayMinutes} 分鐘發送`);
-
-        delayedTimer = setTimeout(function () {
-            sendNow();
-        }, delayMinutes * 60 * 1000);
-    }
-
-    function markUserInteraction() {
-        saveState({
-            lastUserInteractionAt: Date.now()
-        });
-    }
-
-    function attachInteractionListeners() {
-        const events = ['pointerdown', 'keydown', 'touchstart'];
-
-        events.forEach(function (eventName) {
-            document.addEventListener(
-                eventName,
-                function () {
-                    markUserInteraction();
-                },
-                { passive: true }
-            );
-        });
-
-        // 原本聊天程式也可以主動呼叫：
-        // EVEProactive.markUserInteraction()
-    }
-
-    function startStatusTimer() {
-        if (statusTimer) {
-            clearInterval(statusTimer);
-            statusTimer = null;
-        }
-
-        const settings = loadSettings();
-        if (!settings.statusEnabled) return;
-
-        const minutes = Math.max(
-            1,
-            Number(settings.statusRefreshMinutes) || 5
-        );
-
-        updateActivity();
-
-        statusTimer = setInterval(function () {
-            updateActivity();
-        }, minutes * 60 * 1000);
-    }
-
-    function start() {
-        const settings = loadSettings();
-
-        startStatusTimer();
-
-        if (settings.enabled) {
-            scheduleNext();
-        }
-    }
-
-    function stop() {
-        clearMainTimer();
-        clearDelayedTimer();
-
-        if (statusTimer) {
-            clearInterval(statusTimer);
-            statusTimer = null;
-        }
-    }
-
-    function configure(partialSettings) {
-        const settings = saveSettings(partialSettings);
-
-        stop();
-        start();
-
-        window.dispatchEvent(
-            new CustomEvent('eve:proactive-settings-updated', {
-                detail: settings
-            })
-        );
-
-        return settings;
-    }
-
-    function getStatusText() {
-        const activity = currentActivity || updateActivity();
-        return `${activity.icon} ${activity.label}`;
-    }
-
-    function getLog() {
-        return safeParse(localStorage.getItem(LOG_KEY), []);
-    }
-
-    function init() {
-        updateActivity();
-        attachInteractionListeners();
-        start();
-    }
-
-    window.EVEProactive = {
-        init,
-        start,
-        stop,
-        configure,
-        getSettings: loadSettings,
-        getState: loadState,
-        getActivity: function () {
-            return currentActivity || updateActivity();
-        },
-        getStatusText,
-        getPromptContext: buildPromptContext,
-        markUserInteraction,
-        triggerNow: sendNow,
-        testTrigger: function () {
-            const payload = createPayload();
-
-            window.dispatchEvent(
-                new CustomEvent('eve:proactive-message-test', {
-                    detail: payload
-                })
-            );
-
-            return payload;
-        },
-        getLog
-    };
-
-    // 天氣更新時同步刷新角色狀態。
-    window.addEventListener('eve:environment-updated', function () {
-        updateActivity();
+  }
+  async function queue(reason, options = {}) {
+    const check = eligibility(options);
+    if (!check.allowed) { log('跳过', check.reason); schedule(check.reason === 'not-idle' ? 15 : 30); return { sent:false, reason:check.reason }; }
+    clearTimeout(delayTimer); delayTimer = null;
+    const delay = options.immediate ? 0 : randomInt(settings.delayMinMinutes, settings.delayMaxMinutes);
+    state.pendingAt = Date.now() + delay * MINUTE; persist();
+    return new Promise(resolve => {
+      const run = async () => { state.pendingAt = 0; persist(); const result = await dispatch(payload(reason, check)); schedule(); resolve(result); };
+      if (!delay) run(); else delayTimer = setTimeout(run, delay * MINUTE);
     });
+  }
+  function checkDue() {
+    if (!settings.enabled) return;
+    if (state.nextDueAt && Date.now() + 1000 < state.nextDueAt) { schedule(Math.max(1, (state.nextDueAt - Date.now()) / MINUTE)); return; }
+    queue('scheduled');
+  }
+  function catchUp() {
+    if (!settings.enabled || !settings.catchUpAfterResume || !state.nextDueAt) return;
+    if (Date.now() >= state.nextDueAt) queue('resume-catch-up');
+    else { clearTimeout(timer); timer = setTimeout(checkDue, Math.max(1000, state.nextDueAt - Date.now())); }
+  }
+  function markUserInteraction() {
+    state.lastUserInteractionAt = Date.now();
+    if (delayTimer) { clearTimeout(delayTimer); delayTimer = null; state.pendingAt = 0; emit('eve:proactive-cancelled', { reason:'user-interaction' }); }
+    persist();
+  }
+  function getPromptContext() {
+    if (!settings.enabled) return '';
+    const a = getActivity();
+    return ['【角色当前生活状态】', `${a.icon} ${a.label}`, a.prompt, '这只是背景状态，请自然参考，不要机械汇报。'].join('\n');
+  }
+  function configure(next = {}) {
+    settings = Object.assign({}, DEFAULTS, settings, next || {});
+    settings.enabled = Boolean(settings.enabled); settings.quietHoursEnabled = Boolean(settings.quietHoursEnabled);
+    settings.onlyWhenChatOpen = Boolean(settings.onlyWhenChatOpen); settings.catchUpAfterResume = Boolean(settings.catchUpAfterResume);
+    settings.intervalMode = settings.intervalMode === 'fixed' ? 'fixed' : 'random';
+    settings.fixedIntervalMinutes = clamp(settings.fixedIntervalMinutes, 5, 10080, 180);
+    settings.randomMinMinutes = clamp(settings.randomMinMinutes, 5, 10080, 90);
+    settings.randomMaxMinutes = clamp(settings.randomMaxMinutes, settings.randomMinMinutes, 10080, 300);
+    settings.idleRequiredMinutes = clamp(settings.idleRequiredMinutes, 0, 10080, 45);
+    settings.delayMinMinutes = clamp(settings.delayMinMinutes, 0, 1440, 1);
+    settings.delayMaxMinutes = clamp(settings.delayMaxMinutes, settings.delayMinMinutes, 1440, 8);
+    settings.quietStartHour = clamp(settings.quietStartHour, 0, 23, 0);
+    settings.quietEndHour = clamp(settings.quietEndHour, 0, 23, 8);
+    settings.dailyLimit = Math.floor(clamp(settings.dailyLimit, 0, 100, 4));
+    persist(); if (settings.enabled) schedule(); else { clearTimeout(timer); state.nextDueAt = 0; persist(); }
+    emit('eve:proactive-settings-updated', { settings:getSettings() });
+    return getSettings();
+  }
+  function getSettings() { return clone(settings); }
+  function getState() { resetDaily(); return clone(Object.assign({}, state, { initialized, activity:getActivity(), eligibility:eligibility() })); }
+  function triggerNow(options = {}) { return queue(options.reason || 'manual', { force:options.force !== false, immediate:options.immediate !== false }); }
+  function init() {
+    if (initialized) return Promise.resolve(getState());
+    initialized = true; updateActivity(true);
+    activityTimer = setInterval(updateActivity, 5 * MINUTE);
+    on(window, 'eve:environment-updated', updateActivity);
+    on(window, 'eve:user-message-sent', markUserInteraction);
+    on(window, 'eve:user-message-committed', markUserInteraction);
+    on(document, 'visibilitychange', () => { if (document.visibilityState === 'visible') catchUp(); });
+    on(window, 'focus', catchUp);
+    window.EVE ||= {}; window.EVE.proactive = window.EVEProactive;
+    emit('eve:proactive-ready', { version:VERSION, settings:getSettings(), state:getState() });
+    if (settings.enabled) state.nextDueAt ? catchUp() : schedule();
+    return Promise.resolve(getState());
+  }
+  function destroy() { clearTimeout(timer); clearTimeout(delayTimer); clearInterval(activityTimer); disposers.splice(0).forEach(fn => { try { fn(); } catch (_) {} }); initialized = false; }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init, { once: true });
-    } else {
-        init();
-    }
+  window.EVEProactive = Object.freeze({ version:VERSION, init, destroy, configure, getSettings, getState, getActivity, getPromptContext, markUserInteraction, triggerNow, scheduleNext:schedule, checkEligibility:eligibility, getLog:() => clone(load(LOG_KEY,{entries:[]}).entries || []) });
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init, { once:true }) : init();
 })(window, document);
