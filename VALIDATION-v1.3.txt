@@ -1,0 +1,39 @@
+EVE Chat v1.3.0 Validation
+==========================
+
+已完成的静态检查
+- 28 个外部 JavaScript 文件全部通过 node --check
+- index.html 的 3 段内嵌 JavaScript 全部通过 node --check
+- 8 个 JSON 文件全部可解析
+- index.html 的全部本地 script 路径存在
+- memory.js → memory-inbox/core.js 载入顺序正确
+- daily-schedule/core.js → daily-schedule/app.js 载入顺序正确
+- healthcheck.js → feature-settings.js 载入顺序正确
+
+已完成的隔离浏览器测试
+- 主页成功新增“行程”小应用
+- 原“纪念日／论坛”区域成功切换为可容纳行程的应用网格
+- 点击“行程”可打开独立 schedule-screen
+- 打开行程时主页正确隐藏，返回时可恢复
+- 行程核心自动生成当天本地回退行程
+- 行程当前项与下一项可读取
+- 记忆确认模式启用后 EVEMemory.autoExtract 为 false
+- “我最喜欢猫，明天要去东京上课”产生事实与事件候选
+- 候选保留后成功写入正式扩展记忆
+- 待确认数量角标正确更新
+- 来源消息撤回后，对应未确认候选数量从 1 变为 0
+- 隔离测试捕捉到的页面 JavaScript 错误为 0
+
+未能在建置环境完成
+- 使用者真实 Gemini API Key 的线上请求
+- Open-Meteo、Jolpica、OpenF1 的实际网络连线
+- GitHub Pages CDN 与 Safari 快取实机行为
+- iPhone 后台暂停与通知实机测试
+
+部署后建议依序测试
+1. 主页是否出现“行程”图标
+2. 打开角色后，从主页进入行程并生成当天计划
+3. 在聊天中说“我喜欢猫”后查看记忆图标角标
+4. 保留或忽略候选记忆
+5. 再发送一条可提取内容，撤回消息，确认候选同步消失
+6. 最后运行“扩展功能健康检查”
