@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '0.9.0';
+  const VERSION = '1.1.0';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -22,6 +22,8 @@
   });
 
   const providers = new Map();
+  const requestTransformers = new Map();
+  const responseTransformers = new Map();
   const disposers = [];
   const fingerprints = new Map();
   const seenMessageIds = new Set();
@@ -79,6 +81,38 @@
   }
   function unregisterContextProvider(id) { return providers.delete(String(id)); }
   function setContextProviderEnabled(id, enabled) { const item = providers.get(String(id)); if (!item) return false; item.enabled = Boolean(enabled); return true; }
+  function registerRequestTransformer(id, transformer, options = {}) {
+    if (!id || typeof transformer !== 'function') throw new TypeError('Request transformer requires an id and a function.');
+    requestTransformers.set(String(id), { id:String(id), transformer, priority:Number(options.priority) || 100, enabled:options.enabled !== false });
+    return () => requestTransformers.delete(String(id));
+  }
+  function unregisterRequestTransformer(id) { return requestTransformers.delete(String(id)); }
+  function registerResponseTransformer(id, transformer, options = {}) {
+    if (!id || typeof transformer !== 'function') throw new TypeError('Response transformer requires an id and a function.');
+    responseTransformers.set(String(id), { id:String(id), transformer, priority:Number(options.priority) || 100, enabled:options.enabled !== false });
+    return () => responseTransformers.delete(String(id));
+  }
+  function unregisterResponseTransformer(id) { return responseTransformers.delete(String(id)); }
+  async function applyRequestTransformers(body, meta = {}) {
+    let output = clone(body);
+    for (const item of [...requestTransformers.values()].filter(x => x.enabled).sort((a,b) => a.priority - b.priority)) {
+      try {
+        const next = await item.transformer(output, Object.assign({ chat:getCurrentChat() }, meta));
+        if (next && typeof next === 'object') output = next;
+      } catch (error) { console.warn(`[EVEAdapter] 请求转换器失败：${item.id}`, error); }
+    }
+    return output;
+  }
+  async function applyResponseTextTransformers(text, meta = {}) {
+    let output = String(text ?? '');
+    for (const item of [...responseTransformers.values()].filter(x => x.enabled).sort((a,b) => a.priority - b.priority)) {
+      try {
+        const next = await item.transformer(output, Object.assign({ chat:getCurrentChat() }, meta));
+        if (typeof next === 'string') output = next;
+      } catch (error) { console.warn(`[EVEAdapter] 回应转换器失败：${item.id}`, error); }
+    }
+    return output;
+  }
   function collectContext(meta = {}) {
     const chunks = [], seen = new Set();
     for (const item of [...providers.values()].filter(x => x.enabled).sort((a,b) => a.priority - b.priority)) {
@@ -127,6 +161,39 @@
     return /generativelanguage\.googleapis\.com/i.test(value) || /\/models\/[^/]+:(generateContent|streamGenerateContent)/i.test(value);
   }
   function extractText(data) { return (data?.candidates || []).flatMap(c => (c?.content?.parts || []).map(p => p?.text).filter(Boolean)).join('\n').trim(); }
+  async function transformAIResponse(response, meta = {}) {
+    if (!response?.ok || !response.clone || responseTransformers.size === 0) return response;
+    const type = response.headers?.get?.('content-type') || '';
+    if (!/application\/json/i.test(type)) return response;
+    try {
+      const raw = await response.clone().json();
+      const output = clone(raw);
+      let changed = false;
+      for (const candidate of output?.candidates || []) {
+        for (const part of candidate?.content?.parts || []) {
+          if (typeof part?.text !== 'string') continue;
+          const next = await applyResponseTextTransformers(part.text, meta);
+          if (next !== part.text) { part.text = next; changed = true; }
+        }
+      }
+      for (const choice of output?.choices || []) {
+        if (typeof choice?.message?.content === 'string') {
+          const next = await applyResponseTextTransformers(choice.message.content, meta);
+          if (next !== choice.message.content) { choice.message.content = next; changed = true; }
+        }
+        if (typeof choice?.text === 'string') {
+          const next = await applyResponseTextTransformers(choice.text, meta);
+          if (next !== choice.text) { choice.text = next; changed = true; }
+        }
+      }
+      if (!changed) return response;
+      const headers = new Headers(response.headers); headers.delete('content-length'); headers.delete('content-encoding'); headers.delete('transfer-encoding');
+      return new Response(JSON.stringify(output), { status:response.status, statusText:response.statusText, headers });
+    } catch (error) {
+      console.warn('[EVEAdapter] 回应后处理失败，已使用原回应', error);
+      return response;
+    }
+  }
   async function parseResponse(response, url, requestId) {
     if (!response?.ok || !response.clone) return;
     try {
@@ -152,12 +219,14 @@
     if (!body) return { input, init, url, ai:true };
     try {
       const parsed = JSON.parse(body), requestId = ++requestSeq;
-      const injected = injectContext(parsed, { url, requestId, userText:Date.now() - latestUserAt < 120000 ? latestUserText : '', chat:getCurrentChat() });
+      const meta = { url, requestId, userText:Date.now() - latestUserAt < 120000 ? latestUserText : '', chat:getCurrentChat() };
+      const transformed = await applyRequestTransformers(parsed, meta);
+      const injected = injectContext(transformed, meta);
       let nextInput = input, nextInit = Object.assign({}, init || {}, { body:JSON.stringify(injected) });
       if (typeof Request !== 'undefined' && input instanceof Request) { nextInput = new Request(input, nextInit); nextInit = undefined; }
       lastRequestAt = Date.now(); cancelAutoReply('ai-request-started');
       emit('eve:ai-request', { url, requestId, body:clone(injected), timestamp:lastRequestAt });
-      return { input:nextInput, init:nextInit, url, ai:true, requestId };
+      return { input:nextInput, init:nextInit, url, ai:true, requestId, requestBody:clone(injected) };
     } catch (error) {
       console.warn('[EVEAdapter] 背景注入失败，已使用原请求', error);
       return { input, init, url, ai:true };
@@ -169,8 +238,9 @@
     window.fetch = async function(input, init) {
       const prepared = await prepare(input, init);
       try {
-        const response = await nativeFetch(prepared.input, prepared.init);
+        let response = await nativeFetch(prepared.input, prepared.init);
         if (prepared.ai) {
+          response = await transformAIResponse(response, { url:prepared.url, requestId:prepared.requestId, requestBody:prepared.requestBody, userText:latestUserText });
           lastResponseAt = Date.now();
           emit('eve:ai-response', { url:prepared.url, requestId:prepared.requestId, ok:response.ok, status:response.status, timestamp:lastResponseAt });
           parseResponse(response, prepared.url, prepared.requestId);
@@ -305,7 +375,7 @@
       weatherModule:Boolean(window.EVEWeather), proactiveModule:Boolean(window.EVEProactive), memoryModule:Boolean(window.EVEMemory),
       timelineModule:Boolean(window.EVETimeline), recallModule:Boolean(window.EVERecall), stickersModule:Boolean(window.EVEStickers),
       momentsModule:Boolean(window.EVEMoments), notificationsModule:Boolean(window.EVENotifications),
-      healthModule:Boolean(window.EVEHealth), contextProviders:[...providers.keys()], contextLength:collectContext({ diagnostics:true }).length,
+      healthModule:Boolean(window.EVEHealth), roleFidelityModule:Boolean(window.EVERoleFidelity), contextProviders:[...providers.keys()], requestTransformers:[...requestTransformers.keys()], responseTransformers:[...responseTransformers.keys()], contextLength:collectContext({ diagnostics:true }).length,
       lastGeminiRequestAt:lastRequestAt, lastGeminiResponseAt:lastResponseAt, observedMessages:seenMessageIds.size,
       smartReplyFunction:(() => { try { return typeof triggerSmartReply === 'function' || typeof window.triggerSmartReply === 'function'; } catch (_) { return false; } })(),
       smartReplyButton:Boolean(findSmartButton())
@@ -323,12 +393,13 @@
   }
   function destroy() {
     disposers.splice(0).forEach(fn => { try { fn(); } catch (_) {} }); observer?.disconnect(); observer = null;
-    cancelAutoReply('destroy'); restoreFetch(); providers.clear(); seenMessageIds.clear(); clearOneShotContext(); initialized = false;
+    cancelAutoReply('destroy'); restoreFetch(); providers.clear(); requestTransformers.clear(); responseTransformers.clear(); seenMessageIds.clear(); clearOneShotContext(); initialized = false;
   }
 
   window.EVEAdapter = Object.freeze({
     version:VERSION, init, destroy, configure, getSettings:() => Object.assign({}, config), getDiagnostics:diagnostics,
     getCurrentChat, registerContextProvider, unregisterContextProvider, setContextProviderEnabled,
+    registerRequestTransformer, unregisterRequestTransformer, registerResponseTransformer, unregisterResponseTransformer,
     getPromptContext:collectContext, injectGeminiContext:injectContext, setOneShotContext, clearOneShotContext,
     markUserMessage, requestSmartReply, requestProactiveMessage, getLegacyMessage,
     triggerProactiveNow:() => window.EVEProactive?.triggerNow?.({ force:true }) || requestProactiveMessage({ reason:'manual' })

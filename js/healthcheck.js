@@ -2,7 +2,7 @@
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const errors = [];
   let initialized = false;
 
@@ -35,6 +35,11 @@
       test('service-worker', Boolean(window.EVENotifications?.getDiagnostics?.().serviceWorkerRegistered), 'eve-sw.js', 'warning'),
       test('web-icon-loaded', Boolean(window.EVEWebIcon), 'EVEWebIcon'),
       test('web-icon-manager', Boolean(window.EVEWebIcon?.openManager && window.EVEWebIcon?.setFromFile && webIconDiagnostics), JSON.stringify(webIconDiagnostics || {}), 'warning'),
+      test('role-fidelity-core', Boolean(window.EVERoleFidelity), 'EVERoleFidelity'),
+      test('role-fidelity-adapter', Boolean((diagnostics?.contextProviders || []).includes('role-fidelity') && (diagnostics?.requestTransformers || []).includes('role-fidelity-sampling') && (diagnostics?.responseTransformers || []).includes('role-fidelity-output')), JSON.stringify({ context:diagnostics?.contextProviders, request:diagnostics?.requestTransformers, response:diagnostics?.responseTransformers }), 'warning'),
+      test('xiaoyi-pack', Boolean(window.EVEXiaoYiPack?.diagnostics?.().registered), JSON.stringify(window.EVEXiaoYiPack?.diagnostics?.() || {}), 'warning'),
+      test('xiaoyi-r1-live', Boolean(window.EVEXiaoYiR1), JSON.stringify(window.EVEXiaoYiR1?.getState?.() || {}), 'warning'),
+      test('role-fidelity-ui', Boolean(document.getElementById('eve-role-fidelity-setting-item') || window.EVERoleFidelityUI), '角色贴合增强设置', 'warning'),
       test('settings-ui', Boolean(document.getElementById('eve-extension-settings-section')), '设置 → EVE 扩展功能', 'warning'),
       test('chat-input', Boolean(document.getElementById('api-chat-input')), '#api-chat-input'),
       test('smart-reply', Boolean(diagnostics?.smartReplyFunction || diagnostics?.smartReplyButton), '自动回复 / 主动聊天需要原生 triggerSmartReply', 'warning'),
