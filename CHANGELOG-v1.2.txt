@@ -1,0 +1,23 @@
+EVE Chat v1.2.0 Change Log
+==========================
+
+新增
+- plugins/sticker-intelligence/core.js
+- plugins/scene-state/core.js
+- plugins/daily-schedule/core.js
+- js/ai-diagnostics.js
+- character-packs/xiaoyi/schedule.js
+
+修改
+- js/stickers.js：稳定 stickerId、导入事件返回ID、保存原始文件名
+- js/adapter.js：AI回应诊断事件、扩展模块诊断、请求旁路头支持
+- js/feature-settings.js：新增表情包智能识别、当前场景、行程表、AI限制诊断入口
+- js/healthcheck.js：新增四套系统与萧逸行程提供器检查
+- index.html：加入新模块并调整载入顺序
+- character-packs/xiaoyi/manifest.json：增加 daily-schedule 功能声明
+- character-packs/xiaoyi/index.js：升级至 1.2.0 并显示行程模块状态
+
+未加入
+- 关系值／好感度系统
+- 记忆待确认匣
+- App 原生后台服务

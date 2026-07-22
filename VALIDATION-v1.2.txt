@@ -1,0 +1,30 @@
+EVE Chat v1.2.0 Validation
+==========================
+
+已完成的离线检查
+- 全部外部 JavaScript 文件通过 node --check
+- index.html 内嵌 JavaScript 全部通过 node --check
+- 全部 JSON 文件可解析
+- index.html 的所有本地 script 路径存在
+- 表情包候选排序测试通过
+- stickerId 回应转换测试通过
+- 当前场景识别测试通过
+- Adapter AI诊断事件测试通过
+- AI限制诊断分类测试通过
+- 通用行程本地生成测试通过
+- 到点生成模式只生成一项行程的测试通过
+- 萧逸专属行程提供器注册测试通过
+- R1 Session、赛前准备与独处五分钟行程测试通过
+
+未能在建置环境完成
+- 使用者真实 Gemini API Key 的线上请求
+- Open-Meteo、Jolpica、OpenF1 的实际网络连线
+- iPhone Safari 背景暂停与通知实机测试
+- GitHub Pages CDN 快取行为
+
+因此部署后建议先测试：
+1. 健康检查
+2. 表情包智能识别管理器
+3. 当前场景手动编辑与聊天注入
+4. 行程本地生成
+5. 再开启 Gemini 行程生成与表情包视觉分析
