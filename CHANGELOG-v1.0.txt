@@ -1,0 +1,39 @@
+EVE Chat v1.0 变更记录
+========================
+
+新增
+----
+1. 动态评论连续回复
+   - 角色评论旁新增“回复”按钮。
+   - 用户评论记录 replyToCommentId、replyToAuthorId、rootCommentId 和 replyDepth。
+   - 角色后续回答会继续附着在正确的用户评论下。
+   - 支持多轮一来一回的评论区对话。
+   - AI Prompt 会读取当前评论回复链。
+   - 输入框增加当前回复对象提示条和取消回复按钮。
+
+2. 网页图标管理
+   - 新增 js/web-icon.js。
+   - 支持上传图片并生成多尺寸 PNG 图标。
+   - 更新 favicon、shortcut icon、Apple touch icon 和运行时 manifest。
+   - 使用现有 appIcons IndexedDB 表保存，自带 localStorage 后备。
+   - 支持恢复默认图标。
+
+设置
+----
+- “动态回复增强”新增连续回复、回复按钮和上下文条数设置。
+- “EVE 扩展功能”新增“网页图标”入口。
+
+健康检查
+--------
+- 新增 moments-threaded-replies 检查。
+- 新增 web-icon-loaded 与 web-icon-manager 检查。
+
+修复
+----
+- 修复快速连续操作时，回复提示条可能读取到已清空回复对象的问题。
+- 保留 v0.9 动态设置，不会因升级而重置原设置。
+- 避免评论 DOM 监听因反复移动回复按钮而形成循环。
+
+未加入
+------
+- 关系值、好感度、信任度和关系阶段。
