@@ -1,8 +1,8 @@
-/** EVE Chat Feature Settings UI v1.0.0 */
+/** EVE Chat Feature Settings UI v1.2.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEFeatureSettings?.version) return;
-  const VERSION = '1.0.0';
+  const VERSION = '1.2.0';
   let initialized = false;
   let retryTimer = null;
 
@@ -60,6 +60,18 @@
     stickers.onclick = () => module('EVEStickers')?.openManager?.();
     card.append(stickers);
 
+    const stickerIntelligence = row('表情包智能识别', '理解你发送的表情包，并按语境为角色筛选合适候选', switchMarkup('eve-sticker-intelligence-toggle', module('EVEStickerIntelligence')?.getSettings?.().enabled !== false));
+    stickerIntelligence.onclick = event => { if (!event.target.closest('.toggle-switch')) openStickerIntelligenceSettings(); };
+    card.append(stickerIntelligence);
+
+    const sceneState = row('当前场景状态', '固定地点、在场人物、互动形式和未完成动作，减少剧情矛盾', switchMarkup('eve-scene-state-toggle', module('EVESceneState')?.getSettings?.().enabled !== false));
+    sceneState.onclick = event => { if (!event.target.closest('.toggle-switch')) openSceneStateSettings(); };
+    card.append(sceneState);
+
+    const schedule = row('角色行程表', '整日规划、到点生成或混合模式，可联动天气、R1、通知与时间线', switchMarkup('eve-daily-schedule-toggle', module('EVEDailySchedule')?.getSettings?.().enabled !== false));
+    schedule.onclick = event => { if (!event.target.closest('.toggle-switch')) module('EVEDailySchedule')?.openManager?.(); };
+    card.append(schedule);
+
     const moments = row('动态回复增强', '修复角色评论回复与批量评论失败，保留原动态页面', switchMarkup('eve-moments-toggle', module('EVEMoments')?.getSettings?.().enabled !== false));
     moments.onclick = event => { if (!event.target.closest('.toggle-switch')) openMomentsSettings(); };
     card.append(moments);
@@ -75,6 +87,10 @@
       api.openManager();
     };
     card.append(webIcon);
+
+    const aiDiagnostics = row('AI 限制诊断', '查看Safety拦截、空回复、HTTP错误和解析失败的真实原因');
+    aiDiagnostics.onclick = () => module('EVEAIDiagnostics')?.openPanel?.();
+    card.append(aiDiagnostics);
 
     const health = row('扩展功能健康检查', '检查模块载入、AI 接线、设置与错误状态');
     health.onclick = () => module('EVEHealth')?.openPanel?.();
@@ -99,6 +115,9 @@
     bind('eve-timeline-toggle', enabled => module('EVETimeline')?.configure?.({ enabled }));
     bind('eve-recall-toggle', enabled => module('EVERecall')?.configure?.({ enabled }));
     bind('eve-moments-toggle', enabled => module('EVEMoments')?.configure?.({ enabled }));
+    bind('eve-sticker-intelligence-toggle', enabled => module('EVEStickerIntelligence')?.configure?.({ enabled }));
+    bind('eve-scene-state-toggle', enabled => module('EVESceneState')?.configure?.({ enabled }));
+    bind('eve-daily-schedule-toggle', enabled => module('EVEDailySchedule')?.configure?.({ enabled }));
     bind('eve-notifications-toggle', async enabled => {
       const api = module('EVENotifications');
       if (!api) return;
@@ -157,6 +176,21 @@
     const assistant=checkbox('允许撤回角色消息',s.allowAssistantRecall),memory=checkbox('同步删除扩展记忆',s.purgeExtensionMemory),timeline=checkbox('同步删除扩展时间线',s.purgeExtensionTimeline),native=checkbox('清理有来源消息 ID 的原生记忆',s.purgeNativeSourceLinkedMemory),fallback=checkbox('尝试用文本匹配旧记忆（可能误删，不建议）',s.nativeTextFallback);body.append(assistant,memory,timeline,native,fallback);modal('消息撤回同步',body,()=>api.configure({allowAssistantRecall:assistant.querySelector('input').checked,purgeExtensionMemory:memory.querySelector('input').checked,purgeExtensionTimeline:timeline.querySelector('input').checked,purgeNativeSourceLinkedMemory:native.querySelector('input').checked,nativeTextFallback:fallback.querySelector('input').checked}));
   }
 
+  function openStickerIntelligenceSettings() {
+    const api=module('EVEStickerIntelligence');if(!api)return toast('表情包智能识别模块未载入','error');const s=api.getSettings(),body=document.createElement('div');
+    const incoming=checkbox('理解我刚发送的表情包',s.understandIncoming),selection=checkbox('根据当前语境筛选角色可用表情包',s.smartSelection),candidates=checkbox('把候选表情包ID提供给AI',s.promptCandidates),auto=checkbox('批量导入后自动调用Gemini分析（会消耗额度）',s.autoAnalyzeAfterImport),limit=numberInput(s.candidateLimit,1,20),ttl=numberInput(s.incomingTtlSeconds,15,600),recent=numberInput(s.recentAvoidCount,0,20),frames=numberInput(s.analysisFrameLimit,1,6);
+    body.append(incoming,selection,candidates,auto,field('每轮最多候选数',limit),field('用户表情包理解保留秒数',ttl),field('避免重复使用最近几张',recent),field('GIF最多分析帧数',frames));
+    const manager=document.createElement('button');manager.type='button';manager.textContent='打开智能识别与纠错管理器';manager.onclick=()=>api.openManager?.();body.append(manager);
+    modal('表情包智能识别',body,()=>api.configure({understandIncoming:incoming.querySelector('input').checked,smartSelection:selection.querySelector('input').checked,promptCandidates:candidates.querySelector('input').checked,autoAnalyzeAfterImport:auto.querySelector('input').checked,candidateLimit:limit.value,incomingTtlSeconds:ttl.value,recentAvoidCount:recent.value,analysisFrameLimit:frames.value}));
+  }
+  function openSceneStateSettings() {
+    const api=module('EVESceneState');if(!api)return toast('当前场景模块未载入','error');const s=api.getSettings(),body=document.createElement('div');
+    const promptEnabled=checkbox('把当前场景提供给AI',s.promptEnabled),auto=checkbox('从聊天中自动识别地点、通话与未完成动作',s.autoDetect),timeline=checkbox('地点或互动形式变化时写入时间线',s.recordMajorChangesToTimeline),expire=numberInput(s.expireHours,1,168),pending=numberInput(s.maxPendingActions,1,20),facts=numberInput(s.maxTemporaryFacts,1,30);
+    body.append(promptEnabled,auto,timeline,field('场景多久未更新后自动过期（小时）',expire),field('最多保留未完成动作',pending),field('最多保留临时事实',facts));
+    const manager=document.createElement('button');manager.type='button';manager.textContent='查看或编辑当前场景';manager.onclick=()=>api.openManager?.();body.append(manager);
+    modal('当前场景状态',body,()=>api.configure({promptEnabled:promptEnabled.querySelector('input').checked,autoDetect:auto.querySelector('input').checked,recordMajorChangesToTimeline:timeline.querySelector('input').checked,expireHours:expire.value,maxPendingActions:pending.value,maxTemporaryFacts:facts.value}));
+  }
+
   function openMomentsSettings() {
     const api=module('EVEMoments');if(!api)return toast('动态增强模块未载入','error');const s=api.getSettings(),body=document.createElement('div');
     const replies=checkbox('修复角色回复用户评论',s.repairReplies),threaded=checkbox('允许继续回复角色在评论区的回答',s.threadedReplies),replyButton=checkbox('在角色评论旁显示“回复”按钮',s.showReplyButton),batch=checkbox('批量评论失败时自动后备生成',s.repairBatchComments),style=checkbox('使用微信式评论区细节样式',s.wechatStyle),notify=checkbox('把动态互动发送给通知模块',s.notifyInteractions),fallback=checkbox('增强失败时回退到原生动态回复',s.fallbackToOriginal),retry=numberInput(s.retryCount,0,5),max=numberInput(s.maxBatchComments,1,8),chars=numberInput(s.replyMaxChars,20,300),threadLimit=numberInput(s.threadContextLimit,3,30);
@@ -183,7 +217,10 @@
       'eve-timeline-toggle':module('EVETimeline')?.getSettings?.().enabled,
       'eve-recall-toggle':module('EVERecall')?.getSettings?.().enabled,
       'eve-moments-toggle':module('EVEMoments')?.getSettings?.().enabled,
-      'eve-notifications-toggle':module('EVENotifications')?.getSettings?.().enabled
+      'eve-notifications-toggle':module('EVENotifications')?.getSettings?.().enabled,
+      'eve-sticker-intelligence-toggle':module('EVEStickerIntelligence')?.getSettings?.().enabled,
+      'eve-scene-state-toggle':module('EVESceneState')?.getSettings?.().enabled,
+      'eve-daily-schedule-toggle':module('EVEDailySchedule')?.getSettings?.().enabled
     };
     Object.entries(map).forEach(([id,value])=>{const input=document.getElementById(id);if(input)input.checked=Boolean(value)});
   }
@@ -196,10 +233,10 @@
   function init() {
     if (initialized) return; initialized = true;
     if (!inject()) retryTimer = setInterval(() => { if (inject()) { clearInterval(retryTimer); retryTimer = null; } }, 1000);
-    window.addEventListener('eve:weather-settings-updated',refreshToggles);window.addEventListener('eve:proactive-settings-updated',refreshToggles);window.addEventListener('eve:adapter-settings-updated',refreshToggles);window.addEventListener('eve:recall-settings-updated',refreshToggles);window.addEventListener('eve:moments-settings-updated',refreshToggles);window.addEventListener('eve:notification-settings-updated',refreshToggles);
+    window.addEventListener('eve:weather-settings-updated',refreshToggles);window.addEventListener('eve:proactive-settings-updated',refreshToggles);window.addEventListener('eve:adapter-settings-updated',refreshToggles);window.addEventListener('eve:recall-settings-updated',refreshToggles);window.addEventListener('eve:moments-settings-updated',refreshToggles);window.addEventListener('eve:notification-settings-updated',refreshToggles);window.addEventListener('eve:sticker-intelligence-settings-updated',refreshToggles);window.addEventListener('eve:scene-state-settings-updated',refreshToggles);window.addEventListener('eve:schedule-settings-updated',refreshToggles);
   }
   function destroy() { clearInterval(retryTimer); document.getElementById('eve-extension-settings-section')?.remove(); document.getElementById('eve-feature-modal')?.remove(); initialized=false; }
 
-  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openMomentsSettings,openNotificationSettings,openWebIconSettings:()=>module('EVEWebIcon')?.openManager?.()});
+  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openStickerIntelligenceSettings,openSceneStateSettings,openScheduleManager:()=>module('EVEDailySchedule')?.openManager?.(),openScheduleSettings:()=>module('EVEDailySchedule')?.openSettings?.(),openMomentsSettings,openNotificationSettings,openWebIconSettings:()=>module('EVEWebIcon')?.openManager?.()});
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init,{once:true}):init();
 })(window,document);

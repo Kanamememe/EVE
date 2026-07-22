@@ -1,12 +1,12 @@
 /**
- * EVE Chat Adapter v0.8.0
+ * EVE Chat Adapter v1.2.0
  * Connects the legacy EVE Chat page with Weather, Proactive, Memory and Timeline.
  */
 (function (window, document) {
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '1.1.2';
+  const VERSION = '1.2.0';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -194,6 +194,64 @@
       return response;
     }
   }
+  function extractDiagnosticFromJson(raw, prepared, response) {
+    const candidates = Array.isArray(raw?.candidates) ? raw.candidates : [];
+    const first = candidates[0] || {};
+    const text = extractText(raw);
+    const requestBody = prepared?.requestBody || {};
+    const modelFromUrl = String(prepared?.url || '').match(/\/models\/([^/:?]+)(?::|\/)/)?.[1] || '';
+    return {
+      id:`diag_${prepared?.requestId || Date.now()}`,
+      timestamp:Date.now(),
+      url:prepared?.url || '',
+      model:requestBody.model || modelFromUrl,
+      status:response?.status || 0,
+      ok:Boolean(response?.ok),
+      blockReason:raw?.promptFeedback?.blockReason || '',
+      blockReasonMessage:raw?.promptFeedback?.blockReasonMessage || '',
+      promptSafetyRatings:clone(raw?.promptFeedback?.safetyRatings || []),
+      finishReason:first?.finishReason || raw?.choices?.[0]?.finish_reason || '',
+      safetyRatings:clone(first?.safetyRatings || []),
+      citationMetadata:clone(first?.citationMetadata || null),
+      error:clone(raw?.error || null),
+      textLength:text.length,
+      emptyResponse:!text,
+      safetySettings:clone(requestBody.safetySettings || requestBody.safety_settings || []),
+      generationConfig:clone(requestBody.generationConfig || { temperature:requestBody.temperature, topP:requestBody.top_p, maxTokens:requestBody.max_tokens }),
+      rawSummary:clone({ promptFeedback:raw?.promptFeedback || null, finishReason:first?.finishReason || null, safetyRatings:first?.safetyRatings || null, error:raw?.error || null })
+    };
+  }
+  async function inspectAIResponse(response, prepared) {
+    if (!response?.clone) return null;
+    try {
+      const type = response.headers?.get?.('content-type') || '';
+      const copy = response.clone();
+      let raw = null;
+      if (/application\/json/i.test(type)) raw = await copy.json();
+      else {
+        const body = await copy.text();
+        const payloads = [];
+        for (const line of body.split('\n').map(value => value.trim()).filter(Boolean)) {
+          const source = line.replace(/^data:\s*/, '');
+          if (!source || source === '[DONE]') continue;
+          try { payloads.push(JSON.parse(source)); } catch (_) {}
+        }
+        raw = payloads.length ? payloads[payloads.length - 1] : { rawText:body.slice(0,4000) };
+      }
+      const diagnostic = extractDiagnosticFromJson(raw || {}, prepared, response);
+      emit('eve:ai-response-detail', diagnostic);
+      return diagnostic;
+    } catch (error) {
+      const diagnostic = {
+        id:`diag_${prepared?.requestId || Date.now()}`,
+        timestamp:Date.now(), url:prepared?.url || '', status:response?.status || 0,
+        ok:Boolean(response?.ok), parseError:clean(error?.message || error, 1000), emptyResponse:true
+      };
+      emit('eve:ai-response-detail', diagnostic);
+      return diagnostic;
+    }
+  }
+
   async function parseResponse(response, url, requestId) {
     if (!response?.ok || !response.clone) return;
     try {
@@ -213,7 +271,12 @@
   }
   async function prepare(input, init) {
     const url = typeof input === 'string' ? input : input?.url || '';
-    if (!config.enabled || !isAIEndpoint(url)) return { input, init, url, ai:false };
+    let bypass = false;
+    try {
+      const headers = new Headers(init?.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined));
+      bypass = headers.get('X-EVE-Bypass-Adapter') === '1';
+    } catch (_) {}
+    if (bypass || !config.enabled || !isAIEndpoint(url)) return { input, init, url, ai:false };
     let body = typeof init?.body === 'string' ? init.body : '';
     if (!body && typeof Request !== 'undefined' && input instanceof Request) { try { body = await input.clone().text(); } catch (_) {} }
     if (!body) return { input, init, url, ai:true };
@@ -243,6 +306,7 @@
           response = await transformAIResponse(response, { url:prepared.url, requestId:prepared.requestId, requestBody:prepared.requestBody, userText:latestUserText });
           lastResponseAt = Date.now();
           emit('eve:ai-response', { url:prepared.url, requestId:prepared.requestId, ok:response.ok, status:response.status, timestamp:lastResponseAt });
+          await inspectAIResponse(response, prepared);
           parseResponse(response, prepared.url, prepared.requestId);
         }
         return response;
@@ -375,6 +439,7 @@
       weatherModule:Boolean(window.EVEWeather), proactiveModule:Boolean(window.EVEProactive), memoryModule:Boolean(window.EVEMemory),
       timelineModule:Boolean(window.EVETimeline), recallModule:Boolean(window.EVERecall), stickersModule:Boolean(window.EVEStickers),
       momentsModule:Boolean(window.EVEMoments), notificationsModule:Boolean(window.EVENotifications), replyContextModule:Boolean(window.EVEReplyContext), replyOutputModule:Boolean(window.EVEReplyOutput),
+      stickerIntelligenceModule:Boolean(window.EVEStickerIntelligence), sceneStateModule:Boolean(window.EVESceneState), dailyScheduleModule:Boolean(window.EVEDailySchedule), xiaoyiScheduleModule:Boolean(window.EVEXiaoYiSchedule), aiDiagnosticsModule:Boolean(window.EVEAIDiagnostics),
       healthModule:Boolean(window.EVEHealth), roleFidelityModule:Boolean(window.EVERoleFidelity), contextProviders:[...providers.keys()], requestTransformers:[...requestTransformers.keys()], responseTransformers:[...responseTransformers.keys()], contextLength:collectContext({ diagnostics:true }).length,
       lastGeminiRequestAt:lastRequestAt, lastGeminiResponseAt:lastResponseAt, observedMessages:seenMessageIds.size,
       smartReplyFunction:(() => { try { return typeof triggerSmartReply === 'function' || typeof window.triggerSmartReply === 'function'; } catch (_) { return false; } })(),

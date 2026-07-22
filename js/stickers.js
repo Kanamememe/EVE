@@ -7,7 +7,7 @@
   'use strict';
   if (window.EVEStickers?.version) return;
 
-  const VERSION = '1.1.1';
+  const VERSION = '1.2.0';
   const SETTINGS_KEY = 'eve_sticker_settings_v2';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -109,6 +109,7 @@
     const category = clean(options.category || settings.defaultCategory, 60) || '未分类';
     const commonTags = tags(options.tags ?? settings.defaultTags);
     let imported = 0, skipped = 0, failed = 0;
+    const importedIds = [];
     const existingHashes = new Set(array.map(item => item.contentHash).filter(Boolean));
     const existingSignatures = new Set(array.map(item => item.sourceSignature).filter(Boolean));
 
@@ -123,21 +124,23 @@
         const url = await compressImage(file);
         const name = basename(file.name);
         const filenameTags = tags(name.split(/\s+/).filter(word => word.length >= 2));
-        array.push({
+        const item = {
           id:`emoji_${Date.now()}_${Math.random().toString(36).slice(2,9)}`,
           url, description:name, name, category,
           tags:Array.from(new Set([...commonTags, ...filenameTags])).slice(0,30),
           favorite:false, addedAt:new Date().toISOString(), isPersonal:true,
-          sourceSignature:signature, contentHash
-        });
+          originalFileName:file.name || '', sourceSignature:signature, contentHash
+        };
+        array.push(item);
+        importedIds.push(item.id);
         existingSignatures.add(signature); existingHashes.add(contentHash); imported += 1;
       } catch (error) { console.warn('[EVEStickers] 导入失败', file.name, error); failed += 1; }
     }
     if (imported) { await saveOriginal(); await Promise.resolve(renderOriginal()); }
     const message = [`已导入 ${imported} 张表情包`, skipped ? `跳过 ${skipped} 张` : '', failed ? `失败 ${failed} 张` : ''].filter(Boolean).join('，');
     toast(message, failed ? 'error' : 'success');
-    window.dispatchEvent(new CustomEvent('eve:stickers-imported', { detail:{ imported, skipped, failed, category } }));
-    return { imported, skipped, failed };
+    window.dispatchEvent(new CustomEvent('eve:stickers-imported', { detail:{ imported, skipped, failed, category, ids:importedIds.slice() } }));
+    return { imported, skipped, failed, ids:importedIds.slice() };
   }
 
   async function promptAndImport(files) {
@@ -169,13 +172,13 @@
     if (!wanted) return null;
     const items = managerItems();
     const exact = items.find(item => {
-      const sourceName = String(item.sourceSignature || '').split('|')[0];
+      const sourceName = item.originalFileName || String(item.sourceSignature || '').split('|')[0];
       const values = [item.id, item.name, item.description, sourceName, ...(item.tags || [])].map(normalizeLookup).filter(Boolean);
       return values.includes(wanted);
     });
     if (exact) return exact;
     const partial = items.filter(item => {
-      const sourceName = String(item.sourceSignature || '').split('|')[0];
+      const sourceName = item.originalFileName || String(item.sourceSignature || '').split('|')[0];
       const values = [item.name, item.description, sourceName, ...(item.tags || [])].map(normalizeLookup).filter(Boolean);
       return values.some(value => value.includes(wanted) || wanted.includes(value));
     });
@@ -209,8 +212,8 @@
     }
     if (!value || typeof value !== 'object') return value;
     if (value.type === 'emoji') {
-      const item = resolveItem(value.description || value.name || '');
-      return item ? Object.assign({}, value, { description:item.description || item.name }) : value;
+      const item = resolveItem(value.stickerId || value.id || value.description || value.name || '');
+      return item ? Object.assign({}, value, { stickerId:item.id, description:item.description || item.name }) : value;
     }
     for (const key of ['message','content','text','reply']) {
       if (typeof value[key] !== 'string') continue;
@@ -241,7 +244,7 @@
     if (!settings.enabled || !managerItems().length) return '';
     return [
       '【表情包输出格式修正】',
-      '如果要发送表情包，必须在JSON数组中输出对象：{"type":"emoji","description":"表情包列表中的精确名称"}',
+      '如果要发送表情包，优先在JSON数组中输出对象：{"type":"emoji","stickerId":"候选中的精确ID"}；旧格式description仍兼容',
       '禁止把表情包写成纯文字，例如“[发送了表情包：名称]”',
       '若不确定名称是否存在，就发送普通文字，不要虚构表情包名称'
     ].join('\n');

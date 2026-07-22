@@ -1,8 +1,8 @@
-/** EVE Chat Health Check v1.0.0 */
+/** EVE Chat Health Check v1.2.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.1.2';
+  const VERSION = '1.2.0';
   const errors = [];
   let initialized = false;
 
@@ -47,6 +47,14 @@
       test('recall-hooks', Boolean(window.EVERecall?.getDiagnostics?.().deleteHook && window.EVERecall?.getDiagnostics?.().internalHook), JSON.stringify(window.EVERecall?.getDiagnostics?.() || {}), 'warning'),
       test('sticker-upload-hook', Boolean(window.EVEStickers?.getStats?.().uploadHook), JSON.stringify(window.EVEStickers?.getStats?.() || {}), 'warning'),
       test('sticker-payload-repair', Boolean((diagnostics?.responseTransformers || []).includes('sticker-payload-fix') && window.EVEStickers?.repairAIResponseText), JSON.stringify(window.EVEStickers?.getStats?.() || {}), 'warning'),
+      test('sticker-intelligence-loaded', Boolean(window.EVEStickerIntelligence), JSON.stringify(window.EVEStickerIntelligence?.getDiagnostics?.() || {}), 'warning'),
+      test('sticker-intelligence-adapter', Boolean((diagnostics?.contextProviders || []).includes('sticker-intelligence') && (diagnostics?.responseTransformers || []).includes('sticker-intelligence-output')), JSON.stringify({ context:diagnostics?.contextProviders, response:diagnostics?.responseTransformers }), 'warning'),
+      test('scene-state-loaded', Boolean(window.EVESceneState), JSON.stringify(window.EVESceneState?.getDiagnostics?.() || {}), 'warning'),
+      test('scene-state-adapter', Boolean((diagnostics?.contextProviders || []).includes('scene-state')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
+      test('daily-schedule-loaded', Boolean(window.EVEDailySchedule), JSON.stringify(window.EVEDailySchedule?.getDiagnostics?.() || {}), 'warning'),
+      test('daily-schedule-adapter', Boolean((diagnostics?.contextProviders || []).includes('daily-schedule')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
+      test('xiaoyi-schedule-provider', Boolean(window.EVEXiaoYiSchedule?.diagnostics?.().registered), JSON.stringify(window.EVEXiaoYiSchedule?.diagnostics?.() || {}), 'warning'),
+      test('ai-diagnostics-loaded', Boolean(window.EVEAIDiagnostics), JSON.stringify(window.EVEAIDiagnostics?.getDiagnostics?.() || {}), 'warning'),
       test('reply-context-loaded', Boolean(window.EVEReplyContext), JSON.stringify(window.EVEReplyContext?.getDiagnostics?.() || {}), 'warning'),
       test('reply-context-provider', Boolean((diagnostics?.contextProviders || []).includes('reply-context')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('reply-output-loaded', Boolean(window.EVEReplyOutput), JSON.stringify(window.EVEReplyOutput?.getDiagnostics?.() || {}), 'warning'),
