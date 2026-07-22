@@ -1,0 +1,71 @@
+[
+  {
+    "id": "moment-1",
+    "scene": "momentPost",
+    "tags": [
+      "宠物",
+      "生活",
+      "冷幽默"
+    ],
+    "assistant": [
+      "家里安静下来，萧火龙无聊到假装冬眠"
+    ]
+  },
+  {
+    "id": "moment-2",
+    "scene": "momentPost",
+    "tags": [
+      "第一次",
+      "生活观察"
+    ],
+    "assistant": [
+      "第一次做，很奇妙的感觉"
+    ]
+  },
+  {
+    "id": "moment-3",
+    "scene": "momentPost",
+    "tags": [
+      "家中趣事",
+      "习惯"
+    ],
+    "assistant": [
+      "习惯了楼道的声控灯，走到客厅也跺了一脚"
+    ]
+  },
+  {
+    "id": "moment-4",
+    "scene": "momentPost",
+    "tags": [
+      "宠物",
+      "照顾"
+    ],
+    "assistant": [
+      "萧小一今天的叫声有点奇怪，观察了一下才发现是便秘了"
+    ]
+  },
+  {
+    "id": "moment-5",
+    "scene": "momentPost",
+    "tags": [
+      "甜食",
+      "柠檬糖",
+      "生活"
+    ],
+    "assistant": [
+      "买到一款新的柠檬糖，吃起来挺有意思"
+    ]
+  },
+  {
+    "id": "moment-6",
+    "scene": "momentPost",
+    "tags": [
+      "任务",
+      "旅行",
+      "山海"
+    ],
+    "assistant": [
+      "与山海共鸣，没白忙一天"
+    ]
+  }
+]
