@@ -1,8 +1,8 @@
-/** EVE Chat Feature Settings UI v1.2.0 */
+/** EVE Chat Feature Settings UI v1.3.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEFeatureSettings?.version) return;
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   let initialized = false;
   let retryTimer = null;
 
@@ -44,9 +44,15 @@
     autoReply.onclick = event => { if (!event.target.closest('.toggle-switch')) openAutoReplySettings(); };
     card.append(autoReply);
 
-    const memory = row('扩展记忆', '提取重要资料并在相关对话中自动调用', switchMarkup('eve-memory-toggle', module('EVEMemory')?.getSettings?.().enabled !== false));
+    const memory = row('扩展记忆', '保存已确认资料，并在相关对话中自动调用', switchMarkup('eve-memory-toggle', module('EVEMemory')?.getSettings?.().enabled !== false));
     memory.onclick = event => { if (!event.target.closest('.toggle-switch')) module('EVEMemory')?.openManager?.(); };
     card.append(memory);
+
+    const inboxCount = Number(module('EVEMemoryInbox')?.getStats?.().pending || 0);
+    const memoryInbox = row('待确认记忆', '自动提取的长期事实与事件先在这里确认', `<span data-eve-memory-inbox-setting-count style="min-width:23px;text-align:center;padding:2px 7px;border-radius:10px;background:${inboxCount ? '#ff3b30' : 'rgba(0,0,0,.08)'};color:${inboxCount ? '#fff' : 'inherit'};font-size:11px">${inboxCount}</span><i class="fas fa-chevron-right"></i>`);
+    memoryInbox.id = 'eve-memory-inbox-setting-item';
+    memoryInbox.onclick = () => module('EVEMemoryInbox')?.openInbox?.();
+    card.append(memoryInbox);
 
     const timeline = row('共同时间线', '记录重要对话、主动消息与事件', switchMarkup('eve-timeline-toggle', module('EVETimeline')?.getSettings?.().enabled !== false));
     timeline.onclick = event => { if (!event.target.closest('.toggle-switch')) module('EVETimeline')?.openManager?.(); };
@@ -68,8 +74,12 @@
     sceneState.onclick = event => { if (!event.target.closest('.toggle-switch')) openSceneStateSettings(); };
     card.append(sceneState);
 
-    const schedule = row('角色行程表', '整日规划、到点生成或混合模式，可联动天气、R1、通知与时间线', switchMarkup('eve-daily-schedule-toggle', module('EVEDailySchedule')?.getSettings?.().enabled !== false));
-    schedule.onclick = event => { if (!event.target.closest('.toggle-switch')) module('EVEDailySchedule')?.openManager?.(); };
+    const schedule = row('角色行程表', '主页面独立行程 App，支持整日规划、到点生成与 R1 联动', switchMarkup('eve-daily-schedule-toggle', module('EVEDailySchedule')?.getSettings?.().enabled !== false));
+    schedule.onclick = event => {
+      if (event.target.closest('.toggle-switch')) return;
+      if (module('EVEScheduleApp')?.open) module('EVEScheduleApp').open();
+      else module('EVEDailySchedule')?.openManager?.();
+    };
     card.append(schedule);
 
     const moments = row('动态回复增强', '修复角色评论回复与批量评论失败，保留原动态页面', switchMarkup('eve-moments-toggle', module('EVEMoments')?.getSettings?.().enabled !== false));
@@ -208,6 +218,20 @@
     modal('后台通知',body,()=>api.configure({chatEnabled:chat.querySelector('input').checked,momentEnabled:moments.querySelector('input').checked,proactiveEnabled:proactive.querySelector('input').checked,bridgeOriginal:bridge.querySelector('input').checked,previewEnabled:preview.querySelector('input').checked,onlyWhenHidden:hidden.querySelector('input').checked,vibrate:vibrate.querySelector('input').checked}));
   }
 
+  function refreshMemoryInboxRow() {
+    const item = document.getElementById('eve-memory-inbox-setting-item');
+    if (!item) return;
+    const count = Number(module('EVEMemoryInbox')?.getStats?.().pending || 0);
+    const badge = item.querySelector('[data-eve-memory-inbox-setting-count]');
+    if (badge) {
+      badge.textContent = String(count);
+      badge.style.background = count ? '#ff3b30' : 'rgba(0,0,0,.08)';
+      badge.style.color = count ? '#fff' : 'inherit';
+    }
+    const desc = item.querySelector('.setting-desc');
+    if (desc) desc.textContent = count ? `${count} 条自动提取内容等待确认` : '自动提取的长期事实与事件先在这里确认';
+  }
+
   function refreshToggles() {
     const map = {
       'eve-weather-toggle':module('EVEWeather')?.getSettings?.().enabled,
@@ -223,6 +247,7 @@
       'eve-daily-schedule-toggle':module('EVEDailySchedule')?.getSettings?.().enabled
     };
     Object.entries(map).forEach(([id,value])=>{const input=document.getElementById(id);if(input)input.checked=Boolean(value)});
+    refreshMemoryInboxRow();
   }
   function inject() {
     if (document.getElementById('eve-extension-settings-section')) { refreshToggles(); return true; }
@@ -233,10 +258,10 @@
   function init() {
     if (initialized) return; initialized = true;
     if (!inject()) retryTimer = setInterval(() => { if (inject()) { clearInterval(retryTimer); retryTimer = null; } }, 1000);
-    window.addEventListener('eve:weather-settings-updated',refreshToggles);window.addEventListener('eve:proactive-settings-updated',refreshToggles);window.addEventListener('eve:adapter-settings-updated',refreshToggles);window.addEventListener('eve:recall-settings-updated',refreshToggles);window.addEventListener('eve:moments-settings-updated',refreshToggles);window.addEventListener('eve:notification-settings-updated',refreshToggles);window.addEventListener('eve:sticker-intelligence-settings-updated',refreshToggles);window.addEventListener('eve:scene-state-settings-updated',refreshToggles);window.addEventListener('eve:schedule-settings-updated',refreshToggles);
+    window.addEventListener('eve:weather-settings-updated',refreshToggles);window.addEventListener('eve:proactive-settings-updated',refreshToggles);window.addEventListener('eve:adapter-settings-updated',refreshToggles);window.addEventListener('eve:recall-settings-updated',refreshToggles);window.addEventListener('eve:moments-settings-updated',refreshToggles);window.addEventListener('eve:notification-settings-updated',refreshToggles);window.addEventListener('eve:sticker-intelligence-settings-updated',refreshToggles);window.addEventListener('eve:scene-state-settings-updated',refreshToggles);window.addEventListener('eve:schedule-settings-updated',refreshToggles);window.addEventListener('eve:memory-inbox-updated',refreshMemoryInboxRow);window.addEventListener('eve:memory-inbox-settings-updated',refreshMemoryInboxRow);
   }
   function destroy() { clearInterval(retryTimer); document.getElementById('eve-extension-settings-section')?.remove(); document.getElementById('eve-feature-modal')?.remove(); initialized=false; }
 
-  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openStickerIntelligenceSettings,openSceneStateSettings,openScheduleManager:()=>module('EVEDailySchedule')?.openManager?.(),openScheduleSettings:()=>module('EVEDailySchedule')?.openSettings?.(),openMomentsSettings,openNotificationSettings,openWebIconSettings:()=>module('EVEWebIcon')?.openManager?.()});
+  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openStickerIntelligenceSettings,openSceneStateSettings,openMemoryInbox:()=>module('EVEMemoryInbox')?.openInbox?.(),openScheduleManager:()=>{const app=module('EVEScheduleApp');if(app?.open)return app.open();return module('EVEDailySchedule')?.openManager?.()},openScheduleSettings:()=>module('EVEDailySchedule')?.openSettings?.(),openMomentsSettings,openNotificationSettings,openWebIconSettings:()=>module('EVEWebIcon')?.openManager?.()});
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init,{once:true}):init();
 })(window,document);

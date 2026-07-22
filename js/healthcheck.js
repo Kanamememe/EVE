@@ -1,8 +1,8 @@
-/** EVE Chat Health Check v1.2.0 */
+/** EVE Chat Health Check v1.3.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const errors = [];
   let initialized = false;
 
@@ -24,6 +24,8 @@
       test('weather-loaded', Boolean(window.EVEWeather), 'EVEWeather'),
       test('proactive-loaded', Boolean(window.EVEProactive), 'EVEProactive'),
       test('memory-loaded', Boolean(window.EVEMemory), 'EVEMemory'),
+      test('memory-inbox-loaded', Boolean(window.EVEMemoryInbox), JSON.stringify(window.EVEMemoryInbox?.getStats?.() || {}), 'warning'),
+      test('memory-inbox-confirmation-mode', Boolean(!window.EVEMemoryInbox?.getSettings?.().confirmationMode || window.EVEMemory?.getSettings?.().autoExtract === false), JSON.stringify({ inbox:window.EVEMemoryInbox?.getSettings?.(), memory:window.EVEMemory?.getSettings?.() }), 'warning'),
       test('timeline-loaded', Boolean(window.EVETimeline), 'EVETimeline'),
       test('recall-loaded', Boolean(window.EVERecall), 'EVERecall'),
       test('stickers-loaded', Boolean(window.EVEStickers), 'EVEStickers'),
@@ -52,6 +54,7 @@
       test('scene-state-loaded', Boolean(window.EVESceneState), JSON.stringify(window.EVESceneState?.getDiagnostics?.() || {}), 'warning'),
       test('scene-state-adapter', Boolean((diagnostics?.contextProviders || []).includes('scene-state')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('daily-schedule-loaded', Boolean(window.EVEDailySchedule), JSON.stringify(window.EVEDailySchedule?.getDiagnostics?.() || {}), 'warning'),
+      test('daily-schedule-app', Boolean(window.EVEScheduleApp?.getDiagnostics?.().homeIconInjected && window.EVEScheduleApp?.getDiagnostics?.().screenInjected), JSON.stringify(window.EVEScheduleApp?.getDiagnostics?.() || {}), 'warning'),
       test('daily-schedule-adapter', Boolean((diagnostics?.contextProviders || []).includes('daily-schedule')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('xiaoyi-schedule-provider', Boolean(window.EVEXiaoYiSchedule?.diagnostics?.().registered), JSON.stringify(window.EVEXiaoYiSchedule?.diagnostics?.() || {}), 'warning'),
       test('ai-diagnostics-loaded', Boolean(window.EVEAIDiagnostics), JSON.stringify(window.EVEAIDiagnostics?.getDiagnostics?.() || {}), 'warning'),
