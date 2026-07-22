@@ -1,0 +1,16 @@
+EVE Chat v1.1.1 Validation
+============================
+
+PASS 20 external JavaScript files: node --check
+PASS 8 JSON files: parsed successfully
+PASS 3 inline JavaScript blocks in index.html: node --check
+PASS all local <script src> paths exist
+PASS reply-context.js loaded exactly once
+PASS sticker placeholder conversion unit test
+PASS quoted-message prompt context unit test
+PASS adapter message extraction excludes .reply-reference
+
+Manual device checks still recommended:
+- Send a quoted reply, then trigger AI response
+- Ask AI to send an existing sticker
+- Reopen an older placeholder sticker message and confirm visual fallback

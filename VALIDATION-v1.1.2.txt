@@ -1,0 +1,27 @@
+EVE Chat v1.1.2 Validation
+============================
+
+Completed checks:
+- 21 JavaScript files passed `node --check`
+- All character-pack JSON files parsed successfully
+- All inline JavaScript blocks in index.html passed `node --check`
+- Every local <script src> referenced by index.html exists
+- Adapter response-transformer registration verified
+- AI quote placeholder converted to native EVE format:
+    [引用了消息：原文] 回复
+  ->
+    {"type":"reply_to","message_id":"真实消息ID","content":"回复"}
+- Split quote marker + following reply message merge verified
+- Malformed structured reply object normalization verified
+- EVE native sent/received sender values are recognized
+- Gemini request history [ID:xxxxx] target lookup verified
+- Existing plain-text quote bubble visually repaired into a quote card
+- Chromium isolated integration fixture completed with 0 page errors
+- Health-check registration for reply-output module verified
+
+Manual device check recommended:
+1. Ask the AI to quote one of your previous messages
+2. Confirm a real quote card is shown instead of “[引用了消息：...]”
+3. Confirm the quoted text is the intended original message
+4. Confirm the reply body appears below the quote card
+5. For an older placeholder message, reopen the chat and confirm it is visually repaired when its source message still exists

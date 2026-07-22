@@ -1,0 +1,15 @@
+EVE Chat v1.1.1 Changelog
+===========================
+
+FIXED
+- AI 未识别用户引用的是哪一条角色消息
+- 引用气泡文字被重复算入用户新消息与记忆
+- AI 将表情包输出为“[发送了表情包：名称]”纯文字
+- 已保存的表情包占位文字无法显示图片本体
+
+ADDED
+- js/reply-context.js
+- reply-context 高优先级 Prompt Provider
+- sticker-payload-fix Response Transformer
+- 旧占位表情包气泡显示修复
+- 对应健康检查项目
