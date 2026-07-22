@@ -1,8 +1,8 @@
-/** EVE Chat Health Check v0.8.0 */
+/** EVE Chat Health Check v1.0.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '0.9.0';
+  const VERSION = '1.0.0';
   const errors = [];
   let initialized = false;
 
@@ -15,6 +15,8 @@
   function run() {
     const adapter = window.EVEAdapter;
     const diagnostics = adapter?.getDiagnostics?.() || null;
+    const momentsDiagnostics = window.EVEMoments?.getDiagnostics?.() || null;
+    const webIconDiagnostics = window.EVEWebIcon?.getDiagnostics?.() || null;
     const results = [
       test('index-dom', Boolean(document.getElementById('phone-screen') || document.getElementById('api-chat-screen')), 'EVE Chat 主界面'),
       test('adapter-loaded', Boolean(adapter), 'EVEAdapter'),
@@ -26,10 +28,13 @@
       test('recall-loaded', Boolean(window.EVERecall), 'EVERecall'),
       test('stickers-loaded', Boolean(window.EVEStickers), 'EVEStickers'),
       test('moments-loaded', Boolean(window.EVEMoments), 'EVEMoments'),
-      test('moments-hooks', Boolean(window.EVEMoments?.getDiagnostics?.().hooks?.reply && window.EVEMoments?.getDiagnostics?.().hooks?.batch), JSON.stringify(window.EVEMoments?.getDiagnostics?.().hooks || {}), 'warning'),
+      test('moments-hooks', Boolean(momentsDiagnostics?.hooks?.reply && momentsDiagnostics?.hooks?.batch && momentsDiagnostics?.hooks?.save && momentsDiagnostics?.hooks?.display), JSON.stringify(momentsDiagnostics?.hooks || {}), 'warning'),
+      test('moments-threaded-replies', Boolean(window.EVEMoments?.replyToComment && momentsDiagnostics?.hooks?.save && momentsDiagnostics?.hooks?.display), JSON.stringify({ threadedReplies:momentsDiagnostics?.settings?.threadedReplies, showReplyButton:momentsDiagnostics?.settings?.showReplyButton }), 'warning'),
       test('notifications-loaded', Boolean(window.EVENotifications), 'EVENotifications'),
       test('notification-support', Boolean(window.EVENotifications?.getDiagnostics?.().supported), JSON.stringify(window.EVENotifications?.getDiagnostics?.() || {}), 'warning'),
       test('service-worker', Boolean(window.EVENotifications?.getDiagnostics?.().serviceWorkerRegistered), 'eve-sw.js', 'warning'),
+      test('web-icon-loaded', Boolean(window.EVEWebIcon), 'EVEWebIcon'),
+      test('web-icon-manager', Boolean(window.EVEWebIcon?.openManager && window.EVEWebIcon?.setFromFile && webIconDiagnostics), JSON.stringify(webIconDiagnostics || {}), 'warning'),
       test('settings-ui', Boolean(document.getElementById('eve-extension-settings-section')), '设置 → EVE 扩展功能', 'warning'),
       test('chat-input', Boolean(document.getElementById('api-chat-input')), '#api-chat-input'),
       test('smart-reply', Boolean(diagnostics?.smartReplyFunction || diagnostics?.smartReplyButton), '自动回复 / 主动聊天需要原生 triggerSmartReply', 'warning'),

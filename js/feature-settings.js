@@ -1,8 +1,8 @@
-/** EVE Chat Feature Settings UI v0.8.0 */
+/** EVE Chat Feature Settings UI v1.0.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEFeatureSettings?.version) return;
-  const VERSION = '0.9.0';
+  const VERSION = '1.0.0';
   let initialized = false;
   let retryTimer = null;
 
@@ -67,6 +67,14 @@
     const notifications = row('后台通知', '新聊天消息与动态互动的浏览器通知', switchMarkup('eve-notifications-toggle', Boolean(module('EVENotifications')?.getSettings?.().enabled)));
     notifications.onclick = event => { if (!event.target.closest('.toggle-switch')) openNotificationSettings(); };
     card.append(notifications);
+
+    const webIcon = row('网页图标', '更换浏览器标签图标与 iPhone 主屏幕图标');
+    webIcon.onclick = () => {
+      const api = module('EVEWebIcon');
+      if (!api?.openManager) return toast('网页图标模块未载入', 'error');
+      api.openManager();
+    };
+    card.append(webIcon);
 
     const health = row('扩展功能健康检查', '检查模块载入、AI 接线、设置与错误状态');
     health.onclick = () => module('EVEHealth')?.openPanel?.();
@@ -151,10 +159,10 @@
 
   function openMomentsSettings() {
     const api=module('EVEMoments');if(!api)return toast('动态增强模块未载入','error');const s=api.getSettings(),body=document.createElement('div');
-    const replies=checkbox('修复角色回复用户评论',s.repairReplies),batch=checkbox('批量评论失败时自动后备生成',s.repairBatchComments),style=checkbox('使用微信式评论区细节样式',s.wechatStyle),notify=checkbox('把动态互动发送给通知模块',s.notifyInteractions),fallback=checkbox('增强失败时回退到原生动态回复',s.fallbackToOriginal),retry=numberInput(s.retryCount,0,5),max=numberInput(s.maxBatchComments,1,8),chars=numberInput(s.replyMaxChars,20,300);
-    body.append(replies,batch,style,notify,fallback,field('失败重试次数',retry),field('后备批量评论最多角色数',max),field('单条评论最长字符数',chars));
+    const replies=checkbox('修复角色回复用户评论',s.repairReplies),threaded=checkbox('允许继续回复角色在评论区的回答',s.threadedReplies),replyButton=checkbox('在角色评论旁显示“回复”按钮',s.showReplyButton),batch=checkbox('批量评论失败时自动后备生成',s.repairBatchComments),style=checkbox('使用微信式评论区细节样式',s.wechatStyle),notify=checkbox('把动态互动发送给通知模块',s.notifyInteractions),fallback=checkbox('增强失败时回退到原生动态回复',s.fallbackToOriginal),retry=numberInput(s.retryCount,0,5),max=numberInput(s.maxBatchComments,1,8),chars=numberInput(s.replyMaxChars,20,300),threadLimit=numberInput(s.threadContextLimit,3,30);
+    body.append(replies,threaded,replyButton,batch,style,notify,fallback,field('连续回复最多读取评论数',threadLimit,'用于让角色理解正在继续的评论对话，建议 8～16 条'),field('失败重试次数',retry),field('后备批量评论最多角色数',max),field('单条评论最长字符数',chars));
     const test=document.createElement('button');test.type='button';test.textContent='查看动态模块诊断';test.onclick=()=>{const report=api.getDiagnostics?.();prompt('动态模块诊断',JSON.stringify(report,null,2));};body.append(test);
-    modal('动态回复增强',body,()=>api.configure({repairReplies:replies.querySelector('input').checked,repairBatchComments:batch.querySelector('input').checked,wechatStyle:style.querySelector('input').checked,notifyInteractions:notify.querySelector('input').checked,fallbackToOriginal:fallback.querySelector('input').checked,retryCount:retry.value,maxBatchComments:max.value,replyMaxChars:chars.value}));
+    modal('动态回复增强',body,()=>api.configure({repairReplies:replies.querySelector('input').checked,threadedReplies:threaded.querySelector('input').checked,showReplyButton:replyButton.querySelector('input').checked,repairBatchComments:batch.querySelector('input').checked,wechatStyle:style.querySelector('input').checked,notifyInteractions:notify.querySelector('input').checked,fallbackToOriginal:fallback.querySelector('input').checked,threadContextLimit:threadLimit.value,retryCount:retry.value,maxBatchComments:max.value,replyMaxChars:chars.value}));
   }
   function openNotificationSettings() {
     const api=module('EVENotifications');if(!api)return toast('通知模块未载入','error');const s=api.getSettings(),body=document.createElement('div');
@@ -192,6 +200,6 @@
   }
   function destroy() { clearInterval(retryTimer); document.getElementById('eve-extension-settings-section')?.remove(); document.getElementById('eve-feature-modal')?.remove(); initialized=false; }
 
-  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openMomentsSettings,openNotificationSettings});
+  window.EVEFeatureSettings=Object.freeze({version:VERSION,init,destroy,inject,refresh:refreshToggles,openWeatherSettings,openProactiveSettings,openAutoReplySettings,openRecallSettings,openMomentsSettings,openNotificationSettings,openWebIconSettings:()=>module('EVEWebIcon')?.openManager?.()});
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init,{once:true}):init();
 })(window,document);
