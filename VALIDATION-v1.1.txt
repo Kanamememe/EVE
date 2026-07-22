@@ -1,0 +1,30 @@
+EVE Chat v1.1 验证记录
+=====================
+
+静态检查
+- 所有外部JavaScript通过 node --check
+- index.html 3段内嵌JavaScript通过 node --check
+- index.html全部本地script引用存在
+- 角色包JSON文件均可正常解析
+
+隔离浏览器测试
+- 萧逸名称自动匹配成功
+- 通用引擎注册到Adapter成功
+- 角色Prompt包含萧逸核心和R1五冠王信息
+- Gemini请求temperature从1.5调整为1.18
+- JSON数组回复中的陈述句句号被移除
+- 疑问句问号保留
+- 处理后的回复在原生页面读取前生效
+- 设置入口成功注入
+- 浏览器测试未捕捉到JavaScript错误
+
+R1模拟数据测试
+- Jolpica格式下一站赛历解析成功
+- OpenF1 Session数据匹配成功
+- R1 Prompt包含下一站、比赛地点和下一场Session
+- 不包含现实车手与车队映射
+
+未在构建环境验证
+- 使用者真实Gemini API Key的线上回覆品质
+- GitHub Pages上的Jolpica／OpenF1网络与CORS状况
+- OpenF1付费实时订阅
