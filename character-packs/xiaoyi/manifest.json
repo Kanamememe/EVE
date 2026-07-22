@@ -1,0 +1,19 @@
+{
+  "id": "xiaoyi",
+  "name": "萧逸・夕月专属版",
+  "version": "1.1.0",
+  "type": "character-pack",
+  "entry": "index.js",
+  "profile": "profile.json",
+  "dependencies": [
+    "role-fidelity-core"
+  ],
+  "features": [
+    "chat-style",
+    "moment-style",
+    "ooc-validator",
+    "punctuation-normalizer",
+    "r1-live"
+  ],
+  "description": "萧逸专属深度角色包：性格矛盾模型、夕月关系层、R1五冠王职业层、聊天与动态语言指纹"
+}
