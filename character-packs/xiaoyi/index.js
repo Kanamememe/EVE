@@ -1,8 +1,8 @@
-/** XiaoYi character pack entry v1.1.0 */
+/** XiaoYi character pack entry v1.2.0 */
 (function (window, document) {
   'use strict';
   if (window.EVEXiaoYiPack?.version) return;
-  const VERSION='1.1.0';
+  const VERSION='1.2.0';
   const script=document.currentScript;
   const baseUrl=new URL('./',script?.src||document.baseURI);
   let registered=false;let profile=null;let examples={};let retryTimer=null;let loadingPromise=null;
@@ -21,7 +21,7 @@
   function validate(text,meta){return window.EVEXiaoYiValidator?.validate?.(text,meta)||[]}
   function normalize(text,meta){return window.EVEXiaoYiPunctuation?.normalize?.(text,meta)??String(text??'')}
   async function register(){if(registered)return diagnostics();if(!window.EVERoleFidelity?.registerPack)return null;const data=await loadData();window.EVERoleFidelity.registerPack({id:'xiaoyi',profile:data.profile,examples:data.examples,getExtraContext:extraContext,validate,normalize});registered=true;window.dispatchEvent(new CustomEvent('eve:xiaoyi-pack-ready',{detail:diagnostics()}));return diagnostics()}
-  function diagnostics(){return{version:VERSION,registered,profile:profile?{id:profile.id,name:profile.name,racingIdentity:profile.racingIdentity}:null,exampleCounts:Object.fromEntries(Object.entries(examples).map(([k,v])=>[k,Array.isArray(v)?v.length:0])),r1:Boolean(window.EVEXiaoYiR1)}}
+  function diagnostics(){return{version:VERSION,registered,profile:profile?{id:profile.id,name:profile.name,racingIdentity:profile.racingIdentity}:null,exampleCounts:Object.fromEntries(Object.entries(examples).map(([k,v])=>[k,Array.isArray(v)?v.length:0])),r1:Boolean(window.EVEXiaoYiR1),schedule:Boolean(window.EVEXiaoYiSchedule?.diagnostics?.().registered)}}
   async function init(){try{if(await register())return diagnostics()}catch(error){console.error('[EVEXiaoYiPack] 载入失败',error);window.dispatchEvent(new CustomEvent('eve:xiaoyi-pack-error',{detail:{error:String(error?.message||error)}}))}if(!retryTimer)retryTimer=setInterval(async()=>{try{if(await register()){clearInterval(retryTimer);retryTimer=null}}catch(_){}},700);return diagnostics()}
   function destroy(){if(retryTimer)clearInterval(retryTimer);retryTimer=null;if(registered)window.EVERoleFidelity?.unregisterPack?.('xiaoyi');registered=false}
   window.EVEXiaoYiPack=Object.freeze({version:VERSION,init,destroy,diagnostics,getProfile:()=>profile?JSON.parse(JSON.stringify(profile)):null,getExamples:()=>JSON.parse(JSON.stringify(examples)),baseUrl:baseUrl.href});
