@@ -7,7 +7,7 @@
   'use strict';
   if (window.EVEStickers?.version) return;
 
-  const VERSION = '0.8.0';
+  const VERSION = '1.1.1';
   const SETTINGS_KEY = 'eve_sticker_settings_v2';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -25,6 +25,8 @@
   let originalHandleEmojiUpload = null;
   let manager = null;
   let draggedStickerId = null;
+  let adapterBound = false;
+  let displayObserver = null;
 
   function read() { try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (_) { return Object.assign({}, DEFAULTS); } }
   function configure(next = {}) {
@@ -159,6 +161,133 @@
 
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]); }
   function managerItems() { return getArray() || []; }
+  function normalizeLookup(value) {
+    return clean(String(value || '').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' '), 200).toLowerCase();
+  }
+  function resolveItem(query) {
+    const wanted = normalizeLookup(query);
+    if (!wanted) return null;
+    const items = managerItems();
+    const exact = items.find(item => {
+      const sourceName = String(item.sourceSignature || '').split('|')[0];
+      const values = [item.id, item.name, item.description, sourceName, ...(item.tags || [])].map(normalizeLookup).filter(Boolean);
+      return values.includes(wanted);
+    });
+    if (exact) return exact;
+    const partial = items.filter(item => {
+      const sourceName = String(item.sourceSignature || '').split('|')[0];
+      const values = [item.name, item.description, sourceName, ...(item.tags || [])].map(normalizeLookup).filter(Boolean);
+      return values.some(value => value.includes(wanted) || wanted.includes(value));
+    });
+    return partial.length === 1 ? partial[0] : null;
+  }
+  function parseStickerPlaceholder(value) {
+    const source = clean(value, 500);
+    if (!source) return null;
+    const patterns = [
+      /^[\[【]\s*(?:(?:我|你|角色|AI|ai|助手|萧逸)\s*)?(?:并\s*)?(?:(?:发送了|發送了|发了|發了|发送|發送|发来|發來|使用了)\s*)?(?:一张|一張|一个|一個)?\s*表情包\s*[:：]\s*([^\]】]+?)\s*[\]】]$/i,
+      /^\s*(?:发送了|發送了|发了|發了)\s*表情包\s*[:：]\s*(.+?)\s*$/i
+    ];
+    for (const pattern of patterns) {
+      const match = source.match(pattern);
+      if (match?.[1]) return clean(match[1], 200);
+    }
+    return null;
+  }
+  function emojiObject(description, original = {}) {
+    const item = resolveItem(description);
+    if (!item) return null;
+    const result = { type:'emoji', description:item.description || item.name || description };
+    if (original && typeof original === 'object' && original.name) result.name = original.name;
+    return result;
+  }
+  function repairJsonValue(value) {
+    if (Array.isArray(value)) return value.map(item => repairJsonValue(item));
+    if (typeof value === 'string') {
+      const description = parseStickerPlaceholder(value);
+      return description ? (emojiObject(description) || value) : value;
+    }
+    if (!value || typeof value !== 'object') return value;
+    if (value.type === 'emoji') {
+      const item = resolveItem(value.description || value.name || '');
+      return item ? Object.assign({}, value, { description:item.description || item.name }) : value;
+    }
+    for (const key of ['message','content','text','reply']) {
+      if (typeof value[key] !== 'string') continue;
+      const description = parseStickerPlaceholder(value[key]);
+      const repaired = description ? emojiObject(description, value) : null;
+      if (repaired) return repaired;
+    }
+    const output = Object.assign({}, value);
+    for (const [key, child] of Object.entries(value)) if (child && typeof child === 'object') output[key] = repairJsonValue(child);
+    return output;
+  }
+  function repairAIResponseText(responseText) {
+    const source = String(responseText ?? '');
+    const fenced = source.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    const candidate = (fenced ? fenced[1] : source).trim();
+    try {
+      const parsed = JSON.parse(candidate);
+      const repaired = repairJsonValue(parsed);
+      const json = JSON.stringify(repaired);
+      return fenced ? `\`\`\`json\n${json}\n\`\`\`` : json;
+    } catch (_) {
+      const description = parseStickerPlaceholder(candidate);
+      const repaired = description ? emojiObject(description) : null;
+      return repaired ? JSON.stringify([repaired]) : source;
+    }
+  }
+  function stickerPromptContext() {
+    if (!settings.enabled || !managerItems().length) return '';
+    return [
+      '【表情包输出格式修正】',
+      '如果要发送表情包，必须在JSON数组中输出对象：{"type":"emoji","description":"表情包列表中的精确名称"}',
+      '禁止把表情包写成纯文字，例如“[发送了表情包：名称]”',
+      '若不确定名称是否存在，就发送普通文字，不要虚构表情包名称'
+    ].join('\n');
+  }
+  function bindAdapter() {
+    if (adapterBound || !window.EVEAdapter?.registerResponseTransformer) return false;
+    window.EVEAdapter.registerContextProvider?.('sticker-format-fix', stickerPromptContext, { priority:40 });
+    window.EVEAdapter.registerResponseTransformer('sticker-payload-fix', repairAIResponseText, { priority:40 });
+    adapterBound = true;
+    return true;
+  }
+  function repairBubble(element) {
+    if (!element?.querySelector) return false;
+    const bubble = element.matches?.('.message-bubble,.message-content,.message-text') ? element : element.querySelector('.message-bubble,.message-content,.message-text');
+    if (!bubble || bubble.dataset.eveStickerRepaired === '1') return false;
+    const copy = bubble.cloneNode(true);
+    copy.querySelectorAll?.('.reply-reference,.timestamp,.message-time,.message-actions,button').forEach(node => node.remove());
+    const description = parseStickerPlaceholder(copy.textContent);
+    const item = description ? resolveItem(description) : null;
+    const url = item?.url || item?.imageData || '';
+    if (!item || !url) return false;
+    bubble.dataset.eveStickerRepaired = '1';
+    bubble.textContent = '';
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = item.description || item.name || description;
+    image.title = image.alt;
+    image.className = 'message-emoji eve-repaired-sticker';
+    image.style.cssText = 'display:block;max-width:min(180px,48vw);max-height:220px;object-fit:contain;border-radius:12px';
+    bubble.appendChild(image);
+    const container = bubble.closest('.message-container,[data-message-id]');
+    container?.classList?.add('emoji-only','eve-sticker-rendered');
+    return true;
+  }
+  function scanStickerPlaceholders(root = document) {
+    if (root.matches?.('.message-bubble,.message-content,.message-text')) repairBubble(root);
+    root.querySelectorAll?.('.message-bubble,.message-content,.message-text').forEach(repairBubble);
+  }
+  function installDisplayRepair() {
+    if (displayObserver) return;
+    scanStickerPlaceholders(document);
+    displayObserver = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1) scanStickerPlaceholders(node);
+    });
+    displayObserver.observe(document.body, { childList:true, subtree:true });
+  }
   async function removeById(id) {
     const array = getArray(); if (!array) return false;
     const index = array.findIndex(item => String(item.id) === String(id));
@@ -270,14 +399,18 @@
   function retryHook() { if (!installUploadHook()) setTimeout(retryHook, 1000); }
   function init() {
     if (initialized) return Promise.resolve(getStats());
-    initialized = true; retryHook();
+    initialized = true; retryHook(); installDisplayRepair();
+    if (!bindAdapter()) {
+      const timer = setInterval(() => { if (bindAdapter()) clearInterval(timer); }, 500);
+      setTimeout(() => clearInterval(timer), 30000);
+    }
     window.EVE ||= {}; window.EVE.stickers = window.EVEStickers;
     window.dispatchEvent(new CustomEvent('eve:stickers-ready', { detail:getStats() }));
     return Promise.resolve(getStats());
   }
-  function getStats() { const items = managerItems(); return { version:VERSION, initialized, total:items.length, favorites:items.filter(x => x.favorite).length, categories:new Set(items.map(x => x.category || '未分类')).size, uploadHook:Boolean(originalHandleEmojiUpload) }; }
-  function destroy() { if (originalHandleEmojiUpload) window.handleEmojiUpload = originalHandleEmojiUpload; originalHandleEmojiUpload = null; manager?.remove(); initialized = false; }
+  function getStats() { const items = managerItems(); return { version:VERSION, initialized, total:items.length, favorites:items.filter(x => x.favorite).length, categories:new Set(items.map(x => x.category || '未分类')).size, uploadHook:Boolean(originalHandleEmojiUpload), adapterBound, displayRepair:Boolean(displayObserver) }; }
+  function destroy() { if (originalHandleEmojiUpload) window.handleEmojiUpload = originalHandleEmojiUpload; originalHandleEmojiUpload = null; displayObserver?.disconnect(); displayObserver = null; manager?.remove(); initialized = false; }
 
-  window.EVEStickers = Object.freeze({ version:VERSION, init, destroy, configure, getSettings, getStats, importFiles, openManager, findByTags, removeById, updateById, moveById });
+  window.EVEStickers = Object.freeze({ version:VERSION, init, destroy, configure, getSettings, getStats, importFiles, openManager, findByTags, removeById, updateById, moveById, resolveItem, repairAIResponseText, scanStickerPlaceholders });
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init, { once:true }) : init();
 })(window, document);

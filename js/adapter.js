@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.2';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -311,7 +311,7 @@
   }
   function messageText(element) {
     const target = element.querySelector('.message-bubble,.message-content,.text-message,.message-text') || element;
-    const copy = target.cloneNode(true); copy.querySelectorAll?.('.message-action-bar,.message-actions,.timestamp,.message-time,button').forEach(node => node.remove());
+    const copy = target.cloneNode(true); copy.querySelectorAll?.('.reply-reference,.message-action-bar,.message-actions,.timestamp,.message-time,button').forEach(node => node.remove());
     return clean(copy.textContent, 5000);
   }
   function messageSender(element) {
@@ -374,7 +374,7 @@
       version:VERSION, initialized, settings:Object.assign({}, config), fetchHookInstalled:Boolean(nativeFetch), chat:getCurrentChat(),
       weatherModule:Boolean(window.EVEWeather), proactiveModule:Boolean(window.EVEProactive), memoryModule:Boolean(window.EVEMemory),
       timelineModule:Boolean(window.EVETimeline), recallModule:Boolean(window.EVERecall), stickersModule:Boolean(window.EVEStickers),
-      momentsModule:Boolean(window.EVEMoments), notificationsModule:Boolean(window.EVENotifications),
+      momentsModule:Boolean(window.EVEMoments), notificationsModule:Boolean(window.EVENotifications), replyContextModule:Boolean(window.EVEReplyContext), replyOutputModule:Boolean(window.EVEReplyOutput),
       healthModule:Boolean(window.EVEHealth), roleFidelityModule:Boolean(window.EVERoleFidelity), contextProviders:[...providers.keys()], requestTransformers:[...requestTransformers.keys()], responseTransformers:[...responseTransformers.keys()], contextLength:collectContext({ diagnostics:true }).length,
       lastGeminiRequestAt:lastRequestAt, lastGeminiResponseAt:lastResponseAt, observedMessages:seenMessageIds.size,
       smartReplyFunction:(() => { try { return typeof triggerSmartReply === 'function' || typeof window.triggerSmartReply === 'function'; } catch (_) { return false; } })(),

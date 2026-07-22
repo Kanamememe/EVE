@@ -2,7 +2,7 @@
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.2';
   const errors = [];
   let initialized = false;
 
@@ -45,7 +45,12 @@
       test('smart-reply', Boolean(diagnostics?.smartReplyFunction || diagnostics?.smartReplyButton), '自动回复 / 主动聊天需要原生 triggerSmartReply', 'warning'),
       test('context-providers', Boolean((diagnostics?.contextProviders || []).includes('memory') && (diagnostics?.contextProviders || []).includes('timeline')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('recall-hooks', Boolean(window.EVERecall?.getDiagnostics?.().deleteHook && window.EVERecall?.getDiagnostics?.().internalHook), JSON.stringify(window.EVERecall?.getDiagnostics?.() || {}), 'warning'),
-      test('sticker-upload-hook', Boolean(window.EVEStickers?.getStats?.().uploadHook), JSON.stringify(window.EVEStickers?.getStats?.() || {}), 'warning')
+      test('sticker-upload-hook', Boolean(window.EVEStickers?.getStats?.().uploadHook), JSON.stringify(window.EVEStickers?.getStats?.() || {}), 'warning'),
+      test('sticker-payload-repair', Boolean((diagnostics?.responseTransformers || []).includes('sticker-payload-fix') && window.EVEStickers?.repairAIResponseText), JSON.stringify(window.EVEStickers?.getStats?.() || {}), 'warning'),
+      test('reply-context-loaded', Boolean(window.EVEReplyContext), JSON.stringify(window.EVEReplyContext?.getDiagnostics?.() || {}), 'warning'),
+      test('reply-context-provider', Boolean((diagnostics?.contextProviders || []).includes('reply-context')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
+      test('reply-output-loaded', Boolean(window.EVEReplyOutput), JSON.stringify(window.EVEReplyOutput?.getDiagnostics?.() || {}), 'warning'),
+      test('reply-output-repair', Boolean((diagnostics?.responseTransformers || []).includes('reply-output-fix') && (diagnostics?.contextProviders || []).includes('reply-output-format')), JSON.stringify({ response:diagnostics?.responseTransformers, context:diagnostics?.contextProviders }), 'warning')
     ];
     const hard = results.filter(item => !item.pass && item.severity === 'error');
     const warnings = results.filter(item => !item.pass && item.severity === 'warning');
