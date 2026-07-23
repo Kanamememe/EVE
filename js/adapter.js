@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.1';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -440,7 +440,7 @@
       timelineModule:Boolean(window.EVETimeline), recallModule:Boolean(window.EVERecall), stickersModule:Boolean(window.EVEStickers),
       momentsModule:Boolean(window.EVEMoments), notificationsModule:Boolean(window.EVENotifications), replyContextModule:Boolean(window.EVEReplyContext), replyOutputModule:Boolean(window.EVEReplyOutput),
       stickerIntelligenceModule:Boolean(window.EVEStickerIntelligence), sceneStateModule:Boolean(window.EVESceneState), dailyScheduleModule:Boolean(window.EVEDailySchedule), xiaoyiScheduleModule:Boolean(window.EVEXiaoYiSchedule), aiDiagnosticsModule:Boolean(window.EVEAIDiagnostics),
-      healthModule:Boolean(window.EVEHealth), roleFidelityModule:Boolean(window.EVERoleFidelity), contextProviders:[...providers.keys()], requestTransformers:[...requestTransformers.keys()], responseTransformers:[...responseTransformers.keys()], contextLength:collectContext({ diagnostics:true }).length,
+      healthModule:Boolean(window.EVEHealth), responseRecoveryModule:Boolean(window.EVEResponseRecovery), roleFidelityModule:Boolean(window.EVERoleFidelity), contextProviders:[...providers.keys()], requestTransformers:[...requestTransformers.keys()], responseTransformers:[...responseTransformers.keys()], contextLength:collectContext({ diagnostics:true }).length,
       lastGeminiRequestAt:lastRequestAt, lastGeminiResponseAt:lastResponseAt, observedMessages:seenMessageIds.size,
       smartReplyFunction:(() => { try { return typeof triggerSmartReply === 'function' || typeof window.triggerSmartReply === 'function'; } catch (_) { return false; } })(),
       smartReplyButton:Boolean(findSmartButton())

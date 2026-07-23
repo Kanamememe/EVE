@@ -1,8 +1,8 @@
-/** EVE Chat Health Check v1.3.0 */
+/** EVE Chat Health Check v1.3.1 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.3.0';
+  const VERSION = '1.3.1';
   const errors = [];
   let initialized = false;
 
@@ -17,15 +17,21 @@
     const diagnostics = adapter?.getDiagnostics?.() || null;
     const momentsDiagnostics = window.EVEMoments?.getDiagnostics?.() || null;
     const webIconDiagnostics = window.EVEWebIcon?.getDiagnostics?.() || null;
+    const recoveryDiagnostics = window.EVEResponseRecovery?.getDiagnostics?.() || null;
     const results = [
       test('index-dom', Boolean(document.getElementById('phone-screen') || document.getElementById('api-chat-screen')), 'EVE Chat 主界面'),
       test('adapter-loaded', Boolean(adapter), 'EVEAdapter'),
       test('adapter-fetch-hook', Boolean(diagnostics?.fetchHookInstalled), 'Gemini / API 背景注入', 'warning'),
+      test('response-recovery-loaded', Boolean(window.EVEResponseRecovery), window.EVEResponseRecovery?.version || '未载入'),
+      test('response-recovery-fetch-hook', Boolean(recoveryDiagnostics?.fetchHookInstalled), JSON.stringify(recoveryDiagnostics || {}), 'warning'),
+      test('response-recovery-process-hook', Boolean(recoveryDiagnostics?.processHookInstalled), JSON.stringify(recoveryDiagnostics || {}), 'warning'),
+      test('response-recovery-message-hook', Boolean(recoveryDiagnostics?.addMessageHookInstalled), JSON.stringify(recoveryDiagnostics || {}), 'warning'),
       test('weather-loaded', Boolean(window.EVEWeather), 'EVEWeather'),
       test('proactive-loaded', Boolean(window.EVEProactive), 'EVEProactive'),
       test('memory-loaded', Boolean(window.EVEMemory), 'EVEMemory'),
       test('memory-inbox-loaded', Boolean(window.EVEMemoryInbox), JSON.stringify(window.EVEMemoryInbox?.getStats?.() || {}), 'warning'),
-      test('memory-inbox-confirmation-mode', Boolean(!window.EVEMemoryInbox?.getSettings?.().confirmationMode || window.EVEMemory?.getSettings?.().autoExtract === false), JSON.stringify({ inbox:window.EVEMemoryInbox?.getSettings?.(), memory:window.EVEMemory?.getSettings?.() }), 'warning'),
+      test('memory-inbox-home-app', Boolean(document.getElementById('eve-memory-inbox-home-app') && document.getElementById('eve-memory-inbox-screen')), '主屏幕待确认入口与独立页面', 'warning'),
+      test('memory-inbox-extraction-mode', !window.EVEMemoryInbox?.getSettings?.().enabled || window.EVEMemory?.getSettings?.().autoExtract === false, JSON.stringify({ inbox:window.EVEMemoryInbox?.getSettings?.(), memory:window.EVEMemory?.getSettings?.() }), 'warning'),
       test('timeline-loaded', Boolean(window.EVETimeline), 'EVETimeline'),
       test('recall-loaded', Boolean(window.EVERecall), 'EVERecall'),
       test('stickers-loaded', Boolean(window.EVEStickers), 'EVEStickers'),
@@ -54,7 +60,7 @@
       test('scene-state-loaded', Boolean(window.EVESceneState), JSON.stringify(window.EVESceneState?.getDiagnostics?.() || {}), 'warning'),
       test('scene-state-adapter', Boolean((diagnostics?.contextProviders || []).includes('scene-state')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('daily-schedule-loaded', Boolean(window.EVEDailySchedule), JSON.stringify(window.EVEDailySchedule?.getDiagnostics?.() || {}), 'warning'),
-      test('daily-schedule-app', Boolean(window.EVEScheduleApp?.getDiagnostics?.().homeIconInjected && window.EVEScheduleApp?.getDiagnostics?.().screenInjected), JSON.stringify(window.EVEScheduleApp?.getDiagnostics?.() || {}), 'warning'),
+      test('daily-schedule-home-app', Boolean(window.EVEDailyScheduleApp && document.getElementById('eve-schedule-home-app') && document.getElementById('eve-schedule-screen')), JSON.stringify(window.EVEDailyScheduleApp?.getDiagnostics?.() || {}), 'warning'),
       test('daily-schedule-adapter', Boolean((diagnostics?.contextProviders || []).includes('daily-schedule')), (diagnostics?.contextProviders || []).join(', '), 'warning'),
       test('xiaoyi-schedule-provider', Boolean(window.EVEXiaoYiSchedule?.diagnostics?.().registered), JSON.stringify(window.EVEXiaoYiSchedule?.diagnostics?.() || {}), 'warning'),
       test('ai-diagnostics-loaded', Boolean(window.EVEAIDiagnostics), JSON.stringify(window.EVEAIDiagnostics?.getDiagnostics?.() || {}), 'warning'),
