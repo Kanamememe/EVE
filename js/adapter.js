@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '1.3.2';
+  const VERSION = '1.5.6';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -158,9 +158,19 @@
   }
   function isAIEndpoint(url) {
     const value = String(url || '');
-    return /generativelanguage\.googleapis\.com/i.test(value) || /\/models\/[^/]+:(generateContent|streamGenerateContent)/i.test(value);
+    return /generativelanguage\.googleapis\.com/i.test(value) ||
+      /\/models\/[^/]+:(generateContent|streamGenerateContent)/i.test(value) ||
+      /\/(?:v1\/)?chat\/completions(?:[/?#]|$)/i.test(value) ||
+      /\/v1\/responses(?:[/?#]|$)/i.test(value);
   }
-  function extractText(data) { return (data?.candidates || []).flatMap(c => (c?.content?.parts || []).map(p => p?.text).filter(Boolean)).join('\n').trim(); }
+  function extractText(data) {
+    const gemini = (data?.candidates || []).flatMap(c => (c?.content?.parts || []).map(p => p?.text).filter(Boolean)).join('\n').trim();
+    if (gemini) return gemini;
+    const chunks = (data?.choices || []).map(choice => choice?.message?.content ?? choice?.delta?.content ?? choice?.text).filter(value => typeof value === 'string');
+    const openAI = chunks.join('').trim();
+    if (openAI) return openAI;
+    return typeof data?.output_text === 'string' ? data.output_text.trim() : '';
+  }
   async function transformAIResponse(response, meta = {}) {
     if (!response?.ok || !response.clone || responseTransformers.size === 0) return response;
     const type = response.headers?.get?.('content-type') || '';
@@ -303,6 +313,14 @@
       try {
         let response = await nativeFetch(prepared.input, prepared.init);
         if (prepared.ai) {
+          // CapacitorHttp returns a native-backed fetch response. EVE clones the
+          // same body in diagnostics, recovery and the legacy parser. Buffer it
+          // once and return a standard reusable Response before any clone/read.
+          response = await window.EVENativeAIResponseBridge?.stabilize?.(response, {
+            url: prepared.url,
+            requestId: prepared.requestId,
+            layer: 'adapter'
+          }) || response;
           response = await transformAIResponse(response, { url:prepared.url, requestId:prepared.requestId, requestBody:prepared.requestBody, userText:latestUserText });
           lastResponseAt = Date.now();
           emit('eve:ai-response', { url:prepared.url, requestId:prepared.requestId, ok:response.ok, status:response.status, timestamp:lastResponseAt });

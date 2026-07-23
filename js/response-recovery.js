@@ -13,7 +13,7 @@
   'use strict';
   if (window.EVEResponseRecovery?.version) return;
 
-  const VERSION = '1.3.2';
+  const VERSION = '1.5.6';
   const SETTINGS_KEY = 'eve_response_recovery_settings_v1';
   const LOG_KEY = 'eve_response_recovery_log_v1';
 
@@ -401,12 +401,24 @@
   async function classifyResponse(response, bodyObject) {
     if (!response) return { ok: false, retryable: true, reason: 'network', message: '没有收到响应' };
     if (!response.ok) {
+      let raw = null;
+      let apiMessage = '';
+      try {
+        const type = response.headers?.get?.('content-type') || '';
+        if (/json/i.test(type)) raw = await response.clone().json();
+        else {
+          const text = await response.clone().text();
+          try { raw = JSON.parse(text); } catch (_) { raw = text; }
+        }
+        apiMessage = clean(raw?.message || raw?.error?.message || raw?.detail || (typeof raw === 'string' ? raw : ''), 1200);
+      } catch (_) {}
       return {
         ok: false,
         retryable: shouldRetryHttp(response.status),
         reason: `http-${response.status}`,
-        message: `HTTP ${response.status}`,
-        retryAfterMs: parseRetryAfter(response)
+        message: apiMessage || `HTTP ${response.status}`,
+        retryAfterMs: parseRetryAfter(response),
+        raw
       };
     }
 
@@ -481,7 +493,12 @@
 
       try {
         const args = await buildAttemptArgs(snapshot, attempt, previousReason);
-        const response = await previousFetch(args.input, args.init);
+        let response = await previousFetch(args.input, args.init);
+        response = await window.EVENativeAIResponseBridge?.stabilize?.(response, {
+          url: snapshot.url,
+          attempt,
+          layer: 'response-recovery'
+        }) || response;
         const classification = await classifyResponse(response, bodyObject);
         if (classification.ok) {
           if (attempt > 0) emit('eve:response-recovery-request-recovered', { attempt, url: snapshot.url });

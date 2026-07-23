@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEDailyScheduleApp?.version) return;
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.5.2';
   const SCREEN_ID = 'eve-schedule-screen';
   const ICON_ID = 'eve-schedule-home-app';
   const STYLE_ID = 'eve-schedule-app-style';
@@ -96,17 +96,29 @@
     document.head.appendChild(style);
   }
 
+  function bindHomeIcon(element) {
+    if (!element || element.dataset.eveScheduleBound === VERSION) return;
+    element.dataset.eveScheduleBound = VERSION;
+    element.dataset.eveHomeApp = 'schedule';
+    element.addEventListener('click', event => {
+      if (window.EVEHomeApps?.handlesClicks) return;
+      event.preventDefault();
+      open();
+    });
+  }
   function ensureHomeIcon() {
-    if (document.getElementById(ICON_ID)) return true;
-    const grid = document.querySelector('.home-section.top-right .apps-grid-2, .home-section.top-right .apps-grid, .home-section.top-right .eve-apps-grid-4');
+    const existing = document.getElementById(ICON_ID);
+    if (existing) { bindHomeIcon(existing); updateBadge(); return true; }
+    const grid = document.querySelector('#eve-home-feature-grid, .home-section.top-right .eve-home-feature-grid, .home-section.top-right .apps-grid-2, .home-section.top-right .apps-grid');
     if (!grid) return false;
-    grid.classList.remove('apps-grid-2', 'apps-grid');
-    grid.classList.add('eve-apps-grid-4');
+    grid.id = 'eve-home-feature-grid';
+    grid.classList.remove('apps-grid-2', 'apps-grid', 'eve-apps-grid-4', 'eve-apps-grid-6');
+    grid.classList.add('eve-home-feature-grid');
     const link = document.createElement('a');
     link.href = '#'; link.className = 'mini-app'; link.id = ICON_ID;
-    link.innerHTML = '<div class="mini-app-icon"><i class="fas fa-calendar-alt"></i><span class="eve-home-app-badge" data-badge></span></div><span>行程</span>';
-    link.addEventListener('click', event => { event.preventDefault(); open(); });
-    grid.appendChild(link); updateBadge(); return true;
+    link.dataset.eveHomeApp = 'schedule';
+    link.innerHTML = '<div class="mini-app-icon"><svg class="eve-home-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"></rect><path d="M7 3v4M17 3v4M3 10h18M7 14h3M14 14h3M7 18h3"></path></svg><span class="eve-home-app-badge" data-badge></span></div><span>行程</span>';
+    bindHomeIcon(link); grid.appendChild(link); updateBadge(); return true;
   }
   function statusBarMarkup() {
     return `<div class="app-status-bar"><div class="app-status-time"></div><div class="app-status-right"><div class="app-signal-icon signal-icon"><div class="signal-row"><div class="signal-bar"></div><div class="signal-bar"></div><div class="signal-bar"></div><div class="signal-bar"></div></div></div><div class="app-battery-container"><div class="app-battery-icon"><div class="app-battery-level"></div></div></div></div></div>`;
@@ -134,11 +146,13 @@
     const screen = document.getElementById(SCREEN_ID); if (screen) screen.style.display = 'none';
   }
   function open() {
-    if (!ensureScreen()) return toast('行程界面尚未准备好', 'error');
+    if (!api()) { toast('行程核心模块尚未载入，请执行完整修复同步', 'error'); return false; }
+    if (!ensureScreen()) { toast('行程界面尚未准备好', 'error'); return false; }
     selectedDate = selectedDate || clock().date;
     try { if (typeof showApp === 'function') showApp(SCREEN_ID); else document.getElementById(SCREEN_ID).style.display = 'flex'; }
     catch (_) { document.getElementById(SCREEN_ID).style.display = 'flex'; }
     render(); emit('eve:schedule-app-opened', { date:selectedDate, chat:chat() });
+    return true;
   }
   function editItem(item) {
     const schedule = api(); if (!schedule) return;

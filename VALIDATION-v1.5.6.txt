@@ -1,0 +1,12 @@
+EVE Chat v1.5.6 validation
+- JavaScript syntax: 42 files passed
+- JSON parse: passed
+- index.html local script paths: passed
+- provider compatibility script order: passed
+- SiliconFlow 15-message input reduced below 10: passed
+- unsupported request fields removed: passed
+- max_tokens capped at 4096: passed
+- simulated HTTP 400 response_format rejection retried with minimal body: passed
+- strict fallback returned HTTP 200: passed
+- diary/schedule/role-fidelity files retained: passed
+- website and App use the same www tree: passed

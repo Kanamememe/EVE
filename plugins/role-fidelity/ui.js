@@ -53,14 +53,11 @@
     if (document.getElementById('eve-role-fidelity-setting-item')) return true;
     const section = document.getElementById('eve-extension-settings-section');
     if (section) {
-      const holder = section.querySelector('.settings-list,.settings-section-content,.settings-group') || section;
+      const holder = section.querySelector('[data-eve-list],.setting-card,.settings-list,.settings-section-content,.settings-group') || section;
       holder.appendChild(settingsItem()); return true;
     }
-    const container = document.querySelector('#api-chat-settings-screen .settings-container');
-    if (!container) return false;
-    const wrap=document.createElement('div');wrap.className='settings-section';wrap.id='eve-role-fidelity-standalone-section';
-    wrap.innerHTML='<div class="section-header"><h3>角色贴合</h3></div>';
-    wrap.appendChild(settingsItem());container.appendChild(wrap);return true;
+    // 等待统一的 EVE 扩展功能区建立，避免生成重复或脱离卡片的入口。
+    return false;
   }
 
   function profileOptions(selected) {

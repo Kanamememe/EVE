@@ -7,9 +7,14 @@
   const baseUrl=new URL('./',script?.src||document.baseURI);
   let registered=false;let profile=null;let examples={};let retryTimer=null;let loadingPromise=null;
   async function getJson(path){const response=await fetch(new URL(path,baseUrl).href,{cache:'no-store'});if(!response.ok)throw new Error(`${path}: HTTP ${response.status}`);return response.json()}
-  async function loadData(){if(loadingPromise)return loadingPromise;loadingPromise=Promise.all([
-    getJson('profile.json'),getJson('examples/chat.json'),getJson('examples/moments.json'),getJson('examples/moment-replies.json'),getJson('examples/racing.json'),getJson('examples/negative-examples.json')
-  ]).then(([p,chat,moments,replies,racing,negative])=>{profile=p;examples={chat,moments,replies,racing,negative};return{profile,examples}});return loadingPromise}
+  async function loadData(){
+    if(loadingPromise)return loadingPromise;
+    const embedded=window.EVEXiaoYiEmbeddedData;
+    if(embedded?.profile){profile=JSON.parse(JSON.stringify(embedded.profile));examples=JSON.parse(JSON.stringify(embedded.examples||{}));loadingPromise=Promise.resolve({profile,examples});return loadingPromise}
+    loadingPromise=Promise.all([
+      getJson('profile.json'),getJson('examples/chat.json'),getJson('examples/moments.json'),getJson('examples/moment-replies.json'),getJson('examples/racing.json'),getJson('examples/negative-examples.json')
+    ]).then(([p,chat,moments,replies,racing,negative])=>{profile=p;examples={chat,moments,replies,racing,negative};return{profile,examples}});return loadingPromise
+  }
   function extraContext(meta={}){
     const sections=[];
     const r1=window.EVEXiaoYiR1?.getPromptContext?.(meta);if(r1)sections.push(r1);

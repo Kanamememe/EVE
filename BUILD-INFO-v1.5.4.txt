@@ -1,0 +1,3 @@
+EVE Chat iOS v1.5.4
+Stability-only repair: deterministic www -> ios/App/App/public copy and integrity verification.
+No new user-facing features.

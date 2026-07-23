@@ -400,14 +400,24 @@
     document.head.appendChild(style);
   }
   function ensureHomeIcon() {
-    if (document.getElementById(ICON_ID)) return true;
-    const grid = document.querySelector('.home-section.top-right .apps-grid-2, .home-section.top-right .apps-grid, .home-section.top-right .eve-apps-grid-4');
+    const existing = document.getElementById(ICON_ID);
+    if (existing) {
+      if (!existing.dataset.eveHomeBound) {
+        existing.dataset.eveHomeBound = `memory-inbox-${VERSION}`;
+        existing.addEventListener('click', event => { event.preventDefault(); open(); });
+      }
+      updateBadge();
+      return true;
+    }
+    const grid = document.querySelector('#eve-home-feature-grid, .home-section.top-right .eve-home-feature-grid, .home-section.top-right .apps-grid-2, .home-section.top-right .apps-grid');
     if (!grid) return false;
-    grid.classList.remove('apps-grid-2', 'apps-grid');
-    grid.classList.add('eve-apps-grid-4');
+    grid.id = 'eve-home-feature-grid';
+    grid.classList.remove('apps-grid-2', 'apps-grid', 'eve-apps-grid-4', 'eve-apps-grid-6');
+    grid.classList.add('eve-home-feature-grid');
     const link = document.createElement('a');
     link.href = '#'; link.className = 'mini-app'; link.id = ICON_ID;
-    link.innerHTML = '<div class="mini-app-icon"><i class="fas fa-inbox"></i><span class="eve-memory-inbox-badge" data-badge></span></div><span>待确认</span>';
+    link.innerHTML = '<div class="mini-app-icon"><svg class="eve-home-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="M4 14h4l2 3h4l2-3h4"></path></svg><span class="eve-memory-inbox-badge" data-badge></span></div><span>待确认</span>';
+    link.dataset.eveHomeBound = `memory-inbox-${VERSION}`;
     link.addEventListener('click', event => { event.preventDefault(); open(); });
     grid.appendChild(link); updateBadge();
     return true;
