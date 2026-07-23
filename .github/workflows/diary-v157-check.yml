@@ -1,0 +1,29 @@
+name: Diary v1.5.7 check
+
+on:
+  push:
+    branches: [fix/diary-human-v1.5.7]
+  pull_request:
+    paths:
+      - 'js/diary-humanizer.js'
+      - 'js/diary-humanizer-ui.js'
+      - 'plugins/diary/core.js'
+      - 'apply-diary-v1.5.7.command'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript syntax
+        run: |
+          node --check js/diary-humanizer.js
+          node --check js/diary-humanizer-ui.js
+          node --check plugins/diary/core.js
+      - name: Check updater script syntax
+        run: bash -n apply-diary-v1.5.7.command
+      - name: Verify required files
+        run: |
+          test -s js/diary-humanizer.js
+          test -s js/diary-humanizer-ui.js
+          test -s plugins/diary/core.js
