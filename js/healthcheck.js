@@ -1,8 +1,8 @@
-/** EVE Chat Health Check v1.3.1 */
+/** EVE Chat Health Check v1.3.4 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.3.1';
+  const VERSION = '1.3.4';
   const errors = [];
   let initialized = false;
 
@@ -35,6 +35,11 @@
       test('timeline-loaded', Boolean(window.EVETimeline), 'EVETimeline'),
       test('recall-loaded', Boolean(window.EVERecall), 'EVERecall'),
       test('stickers-loaded', Boolean(window.EVEStickers), 'EVEStickers'),
+      test('sticker-storage-loaded', Boolean(window.EVEStickerStorage), JSON.stringify(window.EVEStickerStorage?.getStatus?.() || {}), 'warning'),
+      test('sticker-storage-vault', Boolean(window.EVEStickerStorage?.readVault && window.EVEStickerStorage?.saveAll), '独立保险库与写后验证', 'warning'),
+      test('moment-image-upload-loaded', Boolean(window.EVEMomentImageUpload), JSON.stringify(window.EVEMomentImageUpload?.getDiagnostics?.() || {}), 'warning'),
+      test('moment-image-upload-hook', Boolean(window.EVEMomentImageUpload?.getDiagnostics?.().overrideInstalled), 'iOS 持久文件选择器', 'warning'),
+      test('app-runtime-loaded', Boolean(window.EVEAppRuntime), JSON.stringify(window.EVEAppRuntime?.diagnostics?.() || {}), 'warning'),
       test('moments-loaded', Boolean(window.EVEMoments), 'EVEMoments'),
       test('moments-hooks', Boolean(momentsDiagnostics?.hooks?.reply && momentsDiagnostics?.hooks?.batch && momentsDiagnostics?.hooks?.save && momentsDiagnostics?.hooks?.display), JSON.stringify(momentsDiagnostics?.hooks || {}), 'warning'),
       test('moments-threaded-replies', Boolean(window.EVEMoments?.replyToComment && momentsDiagnostics?.hooks?.save && momentsDiagnostics?.hooks?.display), JSON.stringify({ threadedReplies:momentsDiagnostics?.settings?.threadedReplies, showReplyButton:momentsDiagnostics?.settings?.showReplyButton }), 'warning'),

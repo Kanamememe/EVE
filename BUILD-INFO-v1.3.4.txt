@@ -1,0 +1,3 @@
+Build: EVE Chat v1.3.4 web hotfix
+Base: v1.3.2 network/CORS hotfix
+Fixes: sticker persistence, moments image upload, Capacitor-ready runtime

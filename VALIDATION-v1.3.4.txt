@@ -1,0 +1,10 @@
+EVE Chat v1.3.4 validation targets
+
+- 所有外部 JavaScript 通过 node --check
+- index.html 内嵌 JavaScript 通过 node --check
+- 本地 script src 路径全部存在
+- 表情包独立保险库可写入、读取和同步
+- 原生 EVE 数据表写入后进行验证
+- 动态图片选择器附着于 document.body
+- 动态图片选择支持 multiple
+- Capacitor 原生运行时会全屏并停用 Service Worker

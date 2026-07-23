@@ -7,7 +7,7 @@
   'use strict';
   if (window.EVEStickers?.version) return;
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.4';
   const SETTINGS_KEY = 'eve_sticker_settings_v2';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -45,12 +45,24 @@
   function clean(value, max = 300) { return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max); }
   function tags(value) { return Array.from(new Set((Array.isArray(value) ? value : String(value || '').split(/[,，]/)).map(x => clean(x, 40)).filter(Boolean))).slice(0, 30); }
   function getArray() { try { return typeof customEmojis !== 'undefined' && Array.isArray(customEmojis) ? customEmojis : null; } catch (_) { return null; } }
-  function saveOriginal() {
+  async function saveOriginal() {
+    const array = getArray() || [];
     try {
-      if (typeof saveCustomEmojis === 'function') return Promise.resolve(saveCustomEmojis());
-      if (typeof window.saveCustomEmojis === 'function') return Promise.resolve(window.saveCustomEmojis());
-    } catch (error) { return Promise.reject(error); }
-    return Promise.resolve(false);
+      if (window.EVEStickerStorage?.saveAll) {
+        return await window.EVEStickerStorage.saveAll(array);
+      }
+      if (typeof saveCustomEmojis === 'function') {
+        const result = await saveCustomEmojis();
+        return result === false ? { ok:false, message:'EVE 原生表情包保存失败' } : { ok:true, result };
+      }
+      if (typeof window.saveCustomEmojis === 'function') {
+        const result = await window.saveCustomEmojis();
+        return result === false ? { ok:false, message:'EVE 原生表情包保存失败' } : { ok:true, result };
+      }
+    } catch (error) {
+      throw error;
+    }
+    return { ok:false, message:'没有找到可用的表情包储存接口' };
   }
   function renderOriginal() {
     try { if (typeof renderEmojiGrid === 'function') return renderEmojiGrid(); } catch (_) {}
@@ -136,9 +148,25 @@
         existingSignatures.add(signature); existingHashes.add(contentHash); imported += 1;
       } catch (error) { console.warn('[EVEStickers] 导入失败', file.name, error); failed += 1; }
     }
-    if (imported) { await saveOriginal(); await Promise.resolve(renderOriginal()); }
+    if (imported) {
+      try {
+        const saveResult = await saveOriginal();
+        if (saveResult?.ok === false) throw new Error(saveResult.message || '表情包保存验证失败');
+        await Promise.resolve(renderOriginal());
+      } catch (error) {
+        const importedIdSet = new Set(importedIds.map(String));
+        for (let index = array.length - 1; index >= 0; index -= 1) {
+          if (importedIdSet.has(String(array[index]?.id))) array.splice(index, 1);
+        }
+        failed += imported;
+        imported = 0;
+        importedIds.length = 0;
+        console.error('[EVEStickers] 保存验证失败，本次导入已回滚', error);
+        toast(`表情包保存失败，本次导入已撤销：${clean(error?.message || error, 160)}`, 'error');
+      }
+    }
     const message = [`已导入 ${imported} 张表情包`, skipped ? `跳过 ${skipped} 张` : '', failed ? `失败 ${failed} 张` : ''].filter(Boolean).join('，');
-    toast(message, failed ? 'error' : 'success');
+    if (imported || skipped || failed) toast(message, failed && !imported ? 'error' : 'success');
     window.dispatchEvent(new CustomEvent('eve:stickers-imported', { detail:{ imported, skipped, failed, category, ids:importedIds.slice() } }));
     return { imported, skipped, failed, ids:importedIds.slice() };
   }
@@ -400,16 +428,18 @@
     });
   }
   function retryHook() { if (!installUploadHook()) setTimeout(retryHook, 1000); }
-  function init() {
-    if (initialized) return Promise.resolve(getStats());
-    initialized = true; retryHook(); installDisplayRepair();
+  async function init() {
+    if (initialized) return getStats();
+    initialized = true;
+    try { await window.EVEStickerStorage?.init?.(); } catch (error) { console.warn('[EVEStickers] 持久储存初始化失败', error); }
+    retryHook(); installDisplayRepair();
     if (!bindAdapter()) {
       const timer = setInterval(() => { if (bindAdapter()) clearInterval(timer); }, 500);
       setTimeout(() => clearInterval(timer), 30000);
     }
     window.EVE ||= {}; window.EVE.stickers = window.EVEStickers;
     window.dispatchEvent(new CustomEvent('eve:stickers-ready', { detail:getStats() }));
-    return Promise.resolve(getStats());
+    return getStats();
   }
   function getStats() { const items = managerItems(); return { version:VERSION, initialized, total:items.length, favorites:items.filter(x => x.favorite).length, categories:new Set(items.map(x => x.category || '未分类')).size, uploadHook:Boolean(originalHandleEmojiUpload), adapterBound, displayRepair:Boolean(displayObserver) }; }
   function destroy() { if (originalHandleEmojiUpload) window.handleEmojiUpload = originalHandleEmojiUpload; originalHandleEmojiUpload = null; displayObserver?.disconnect(); displayObserver = null; manager?.remove(); initialized = false; }
