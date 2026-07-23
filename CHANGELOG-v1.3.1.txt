@@ -1,0 +1,27 @@
+EVE Chat v1.3.1 Changelog
+=========================
+
+新增
+----
+- js/response-recovery.js
+- 回复失败自动恢复设置入口
+- 请求层静默重试
+- 指令层重新生成
+- 失败占位消息拦截
+- 失败生成的部分消息回滚
+- 历史失败占位清理
+- 回复恢复诊断与日志
+
+修改
+----
+- index.html：加载 response-recovery.js
+- js/feature-settings.js：增加回复恢复开关与设置入口
+- js/healthcheck.js：增加四项回复恢复检查
+- js/adapter.js：诊断信息增加 responseRecoveryModule
+
+行为变更
+--------
+- [回复失败: ...]、抱歉，AI响应生成失败等内容不再作为角色消息显示
+- 临时错误自动重试
+- 用户发送新消息后，旧回复重试自动取消
+- Safety 拦截不会被自动重复请求
