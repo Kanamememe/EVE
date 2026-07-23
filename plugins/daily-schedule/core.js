@@ -1,12 +1,12 @@
 /**
- * EVE Daily Schedule v1.2.0
+ * EVE Daily Schedule v1.3.0
  * 通用角色行程插件：整日规划、到点生成、混合模式、时间线／通知／主动消息联动。
  */
 (function (window, document) {
   'use strict';
   if (window.EVEDailySchedule?.version) return;
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const SETTINGS_KEY = 'eve_daily_schedule_settings_v1';
   const STORE_KEY = 'eve_daily_schedule_store_v1';
   const MAX_TIMEOUT = 2147483647;
@@ -789,7 +789,7 @@
     version: VERSION,
     init, destroy, configure, getSettings,
     registerProvider, resolveProvider,
-    generateDay, tick, getDay, currentItem, nextItem,
+    generateDay, tick, getDay, currentItem, nextItem, getClock: localClock,
     addItem, updateItem, removeItem, clearDay,
     getPromptContext, openManager, openSettings, getDiagnostics
   });
