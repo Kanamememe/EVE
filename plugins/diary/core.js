@@ -6,24 +6,20 @@
 (function (window, document) {
   'use strict';
   const VERSION = '1.5.7';
-  const ID = 'eve-diary-humanizer-script';
 
-  function loadHumanizer() {
-    if (window.EVEDiaryHumanizer?.version === VERSION) {
-      window.EVEDiaryHumanizer.install?.();
-      return true;
-    }
-    if (document.getElementById(ID)) return true;
+  function load(id, path, ready) {
+    if (ready()) return true;
+    if (document.getElementById(id)) return true;
     const script = document.createElement('script');
-    script.id = ID;
-    script.src = new URL(`js/diary-humanizer.js?v=${VERSION}`, document.baseURI).href;
+    script.id = id;
+    script.src = new URL(`${path}?v=${VERSION}`, document.baseURI).href;
     script.async = false;
-    script.dataset.eveModule = 'diary-humanizer';
+    script.dataset.eveModule = id;
     script.onerror = () => {
-      console.error('[EVEDiary] 日记自然写作模块载入失败：', script.src);
+      console.error(`[EVEDiary] 模块载入失败：${path}`, script.src);
       try {
         window.dispatchEvent(new CustomEvent('eve:diary-humanizer-error', {
-          detail:{ version:VERSION, src:script.src }
+          detail:{ version:VERSION, src:script.src, module:path }
         }));
       } catch (_) {}
     };
@@ -31,8 +27,15 @@
     return true;
   }
 
-  loadHumanizer();
+  function loadUpgrades() {
+    load('eve-diary-humanizer-script', 'js/diary-humanizer.js', () => window.EVEDiaryHumanizer?.version === VERSION);
+    load('eve-diary-humanizer-ui-script', 'js/diary-humanizer-ui.js', () => window.EVEDiaryHumanizerUI?.version === VERSION);
+    window.EVEDiaryHumanizer?.install?.();
+    window.EVEDiaryHumanizerUI?.install?.();
+  }
+
+  loadUpgrades();
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadHumanizer, { once:true });
+    document.addEventListener('DOMContentLoaded', loadUpgrades, { once:true });
   }
 })(window, document);
