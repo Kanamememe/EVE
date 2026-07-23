@@ -1,0 +1,10 @@
+EVEChat v1.3.2 validation
+
+- All JavaScript files passed node --check.
+- All JSON files parsed successfully.
+- All local script references exist.
+- 3 inline index.html scripts passed node --check.
+- Functional request harness confirmed Authorization is preserved.
+- Functional request harness confirmed X-EVE-Recovery-Attempt is not sent.
+- Static scan confirmed no module sends X-EVE private headers to third-party APIs.
+- Modified script URLs use ?v=1.3.2 cache busting.

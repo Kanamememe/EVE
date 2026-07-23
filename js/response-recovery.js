@@ -1,5 +1,5 @@
 /**
- * EVE Chat Response Recovery v1.3.1
+ * EVE Chat Response Recovery v1.3.2
  * ------------------------------------------------------------
  * - Keeps failed character replies out of the chat UI.
  * - Retries transient AI requests silently.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.EVEResponseRecovery?.version) return;
 
-  const VERSION = '1.3.1';
+  const VERSION = '1.3.2';
   const SETTINGS_KEY = 'eve_response_recovery_settings_v1';
   const LOG_KEY = 'eve_response_recovery_log_v1';
 
@@ -327,10 +327,11 @@
       } catch (_) {}
     }
 
-    const attemptHeader = String(attempt + 1);
+    // Never add EVE-only headers to third-party AI requests. A non-standard
+    // header forces a CORS preflight and some providers reject it, which Safari
+    // surfaces only as a generic network error. Retry state stays local.
     if (snapshot.isRequest) {
       const headers = cloneHeaders(snapshot.input.headers);
-      try { headers.set('X-EVE-Recovery-Attempt', attemptHeader); } catch (_) {}
       const overrides = { headers };
       if (bodyText && !['GET', 'HEAD'].includes(String(snapshot.input.method || 'POST').toUpperCase())) overrides.body = bodyText;
       return { input: new Request(snapshot.input, overrides), init: undefined };
@@ -338,7 +339,6 @@
 
     const nextInit = Object.assign({}, snapshot.init || {});
     nextInit.headers = cloneHeaders(nextInit.headers);
-    try { nextInit.headers.set('X-EVE-Recovery-Attempt', attemptHeader); } catch (_) {}
     if (bodyText) nextInit.body = bodyText;
     return { input: snapshot.input, init: nextInit };
   }

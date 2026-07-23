@@ -1,5 +1,5 @@
 /**
- * EVE Sticker Intelligence v1.2.0
+ * EVE Sticker Intelligence v1.2.1
  *
  * 表情包识别与选图增强：
  * - 为每张表情包保存结构化语义（画面、文字、情绪、意图、场景、语气、强度）
@@ -13,7 +13,7 @@
   'use strict';
   if (window.EVEStickerIntelligence?.version) return;
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.1';
   const SETTINGS_KEY = 'eve_sticker_intelligence_settings_v1';
   const RECENT_KEY = 'eve_sticker_intelligence_recent_v1';
   const DEFAULTS = Object.freeze({
@@ -302,7 +302,8 @@
     analyzing = true;
     emit('eve:sticker-analysis-start', { stickerId:id });
     try {
-      const response = await fetch(endpoint, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-EVE-Bypass-Adapter':'1' }, body:JSON.stringify(body) });
+      const transport = window.EVEAdapter?.rawFetch || window.fetch.bind(window);
+      const response = await transport(endpoint, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) });
       const raw = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(raw?.error?.message || `Gemini请求失败：${response.status}`);
       const text = (raw?.candidates || []).flatMap(candidate => candidate?.content?.parts || []).map(part => part?.text).filter(Boolean).join('\n');

@@ -1,12 +1,12 @@
 /**
- * EVE Daily Schedule v1.3.0
+ * EVE Daily Schedule v1.3.2
  * 通用角色行程插件：整日规划、到点生成、混合模式、时间线／通知／主动消息联动。
  */
 (function (window, document) {
   'use strict';
   if (window.EVEDailySchedule?.version) return;
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.3.2';
   const SETTINGS_KEY = 'eve_daily_schedule_settings_v1';
   const STORE_KEY = 'eve_daily_schedule_store_v1';
   const MAX_TIMEOUT = 2147483647;
@@ -295,9 +295,10 @@
   }
   async function callGemini(prompt, maxTokens = 2200) {
     const api = getApiSettings();
-    const response = await fetch(geminiEndpoint(api), {
+    const transport = window.EVEAdapter?.rawFetch || window.fetch.bind(window);
+    const response = await transport(geminiEndpoint(api), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-EVE-Bypass-Adapter': '1' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt.slice(0, 24000) }] }],
         generationConfig: { temperature: 0.65, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },

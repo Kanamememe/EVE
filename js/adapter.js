@@ -6,7 +6,7 @@
   'use strict';
   if (window.EVEAdapter?.version) return;
 
-  const VERSION = '1.3.1';
+  const VERSION = '1.3.2';
   const KEY = 'eve_adapter_settings_v4';
   const DEFAULTS = Object.freeze({
     enabled: true,
@@ -317,6 +317,11 @@
     };
   }
   function restoreFetch() { if (nativeFetch) { window.fetch = nativeFetch; nativeFetch = null; } }
+  function rawFetch(input, init) {
+    const transport = nativeFetch || (typeof window.fetch === 'function' ? window.fetch.bind(window) : null);
+    if (!transport) return Promise.reject(new Error('Fetch API unavailable'));
+    return transport(input, init);
+  }
   function setOneShotContext(text, ttl = config.oneShotTtlMs) { oneShot = clean(text, config.maxContextCharacters); oneShotUntil = Date.now() + Math.max(1000, Number(ttl) || config.oneShotTtlMs); }
   function clearOneShotContext() { oneShot = ''; oneShotUntil = 0; }
 
@@ -466,7 +471,7 @@
     getCurrentChat, registerContextProvider, unregisterContextProvider, setContextProviderEnabled,
     registerRequestTransformer, unregisterRequestTransformer, registerResponseTransformer, unregisterResponseTransformer,
     getPromptContext:collectContext, injectGeminiContext:injectContext, setOneShotContext, clearOneShotContext,
-    markUserMessage, requestSmartReply, requestProactiveMessage, getLegacyMessage,
+    markUserMessage, requestSmartReply, requestProactiveMessage, getLegacyMessage, rawFetch,
     triggerProactiveNow:() => window.EVEProactive?.triggerNow?.({ force:true }) || requestProactiveMessage({ reason:'manual' })
   });
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init, { once:true }) : init();

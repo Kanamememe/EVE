@@ -1,0 +1,8 @@
+EVEChat v1.3.2 Network/CORS Hotfix
+
+- 修复 v1.3.1 静默恢复层向每个 AI 请求加入 X-EVE-Recovery-Attempt 自定义请求头的问题。
+- 自定义请求头会触发额外 CORS 预检，部分 API 会直接拒绝，Safari 只显示 Network Error。
+- 行程与表情包视觉分析不再发送 X-EVE-Bypass-Adapter 到第三方 API。
+- Adapter 新增本地 rawFetch 通道，绕过上下文注入但不向服务商发送 EVE 私有请求头。
+- AI 限制诊断现在会显示请求 URL、底层错误名称与错误文字、浏览器在线状态。
+- 修改过的脚本使用 v=1.3.2 查询参数，避免 Safari 继续读取旧缓存。
