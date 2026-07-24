@@ -8,6 +8,12 @@ on:
       - 'js/diary-humanizer-ui.js'
       - 'plugins/diary/core.js'
       - '.github/workflows/package-diary-v157-offline.yml'
+  pull_request:
+    paths:
+      - 'js/diary-humanizer.js'
+      - 'js/diary-humanizer-ui.js'
+      - 'plugins/diary/core.js'
+      - '.github/workflows/package-diary-v157-offline.yml'
   workflow_dispatch:
 
 jobs:
