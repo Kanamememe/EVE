@@ -4,6 +4,7 @@ set -euo pipefail
 VERSION="1.5.7"
 REPO_RAW="https://raw.githubusercontent.com/Kanamememe/EVE/main"
 
+# Packaged for direct download in ChatGPT.
 echo "EVE 日记系统 v${VERSION} 更新工具"
 echo "此脚本只更新日记自然写作模块，不改动聊天、行程、角色贴合或其他功能。"
 
