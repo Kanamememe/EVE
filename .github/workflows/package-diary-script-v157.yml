@@ -1,0 +1,21 @@
+name: Package diary v1.5.7 updater
+
+on:
+  push:
+    branches: [artifact/diary-script-v157]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package updater
+        run: |
+          mkdir -p artifact
+          cp apply-diary-v1.5.7.command artifact/
+          chmod +x artifact/apply-diary-v1.5.7.command
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EVEChat-v1.5.7-diary-update-script
+          path: artifact/apply-diary-v1.5.7.command
+          if-no-files-found: error
