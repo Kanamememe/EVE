@@ -1,0 +1,25 @@
+name: Package diary script PR
+
+on:
+  pull_request:
+    paths:
+      - 'apply-diary-v1.5.7.command'
+      - '.github/workflows/package-diary-script-pr.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package script
+        run: |
+          chmod +x apply-diary-v1.5.7.command
+          zip -j EVEChat-v1.5.7-diary-update-script.zip apply-diary-v1.5.7.command
+          shasum -a 256 EVEChat-v1.5.7-diary-update-script.zip > EVEChat-v1.5.7-diary-update-script-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EVEChat-v1.5.7-diary-update-script
+          path: |
+            EVEChat-v1.5.7-diary-update-script.zip
+            EVEChat-v1.5.7-diary-update-script-SHA256.txt
+          if-no-files-found: error
