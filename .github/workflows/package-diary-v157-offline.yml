@@ -1,0 +1,128 @@
+name: Package diary v1.5.7 offline updater
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'js/diary-humanizer.js'
+      - 'js/diary-humanizer-ui.js'
+      - 'plugins/diary/core.js'
+      - '.github/workflows/package-diary-v157-offline.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build offline updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/EVEChat-diary-v1.5.7-offline"
+          mkdir -p "$OUT/patch/js" "$OUT/patch/plugins/diary"
+          cp js/diary-humanizer.js "$OUT/patch/js/"
+          cp js/diary-humanizer-ui.js "$OUT/patch/js/"
+          cp plugins/diary/core.js "$OUT/patch/plugins/diary/"
+
+          cat > "$OUT/apply-diary-v1.5.7-offline.command" <<'SCRIPT'
+          #!/bin/bash
+          set -euo pipefail
+
+          VERSION="1.5.7"
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          PATCH_DIR="$SCRIPT_DIR/patch"
+
+          echo "EVE 日记系统 v${VERSION} 离线更新工具"
+          echo "不会连接 GitHub，也不会修改聊天、行程、角色贴合或其他功能。"
+
+          PROJECT="$(osascript -e 'POSIX path of (choose folder with prompt "选择 EVE iOS 项目资料夹（里面有 www、ios、package.json）")')"
+          PROJECT="${PROJECT%/}"
+
+          for required in "www" "ios" "package.json" "capacitor.config.ts"; do
+            if [ ! -e "$PROJECT/$required" ]; then
+              echo "错误：所选资料夹缺少 $required"
+              read -r -p "按 Enter 结束…"
+              exit 1
+            fi
+          done
+
+          for file in \
+            "patch/js/diary-humanizer.js" \
+            "patch/js/diary-humanizer-ui.js" \
+            "patch/plugins/diary/core.js"; do
+            if [ ! -s "$SCRIPT_DIR/$file" ]; then
+              echo "错误：离线补丁缺少 $file"
+              read -r -p "按 Enter 结束…"
+              exit 1
+            fi
+          done
+
+          STAMP="$(date +%Y%m%d-%H%M%S)"
+          BACKUP="$PROJECT/backups/diary-before-v${VERSION}-$STAMP"
+          mkdir -p "$BACKUP/js" "$BACKUP/plugins/diary"
+
+          for file in \
+            "js/diary-humanizer.js" \
+            "js/diary-humanizer-ui.js" \
+            "plugins/diary/core.js"; do
+            if [ -f "$PROJECT/www/$file" ]; then
+              mkdir -p "$BACKUP/$(dirname "$file")"
+              cp "$PROJECT/www/$file" "$BACKUP/$file"
+            fi
+          done
+
+          mkdir -p "$PROJECT/www/js" "$PROJECT/www/plugins/diary"
+          cp "$PATCH_DIR/js/diary-humanizer.js" "$PROJECT/www/js/diary-humanizer.js"
+          cp "$PATCH_DIR/js/diary-humanizer-ui.js" "$PROJECT/www/js/diary-humanizer-ui.js"
+          cp "$PATCH_DIR/plugins/diary/core.js" "$PROJECT/www/plugins/diary/core.js"
+
+          cd "$PROJECT"
+          echo "正在同步 iOS 项目…"
+          npx cap sync ios
+
+          rm -rf "$PROJECT/ios/App/App/public"
+          mkdir -p "$PROJECT/ios/App/App/public"
+          ditto "$PROJECT/www" "$PROJECT/ios/App/App/public"
+
+          for file in \
+            "js/diary-humanizer.js" \
+            "js/diary-humanizer-ui.js" \
+            "plugins/diary/core.js"; do
+            if [ ! -s "$PROJECT/ios/App/App/public/$file" ]; then
+              echo "错误：最终 App 资源缺少 $file"
+              read -r -p "按 Enter 结束…"
+              exit 1
+            fi
+          done
+
+          echo "✓ 日记 v${VERSION} 已离线更新完成"
+          echo "备份位置：$BACKUP"
+
+          if [ -d "$PROJECT/ios/App/App.xcworkspace" ]; then
+            open "$PROJECT/ios/App/App.xcworkspace"
+          elif [ -d "$PROJECT/ios/App/App.xcodeproj" ]; then
+            open "$PROJECT/ios/App/App.xcodeproj"
+          fi
+
+          read -r -p "Xcode 已打开。按 Enter 结束…"
+          SCRIPT
+
+          chmod +x "$OUT/apply-diary-v1.5.7-offline.command"
+          cat > "$OUT/使用说明.txt" <<'TXT'
+          1. 解压整个 ZIP，不要只拿出 .command 文件。
+          2. 双击 apply-diary-v1.5.7-offline.command。
+          3. 选择目前使用的 EVE iOS 项目资料夹。
+          4. Xcode 打开后保持相同 Team 与 Bundle Identifier，选择 iPhone 后按 Run。
+          5. 这个更新包完全离线，不会连接 GitHub。
+          TXT
+          cd "$RUNNER_TEMP"
+          ditto -c -k --sequesterRsrc --keepParent "EVEChat-diary-v1.5.7-offline" "EVEChat-diary-v1.5.7-offline.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EVEChat-diary-v1.5.7-offline
+          path: ${{ runner.temp }}/EVEChat-diary-v1.5.7-offline.zip
+          if-no-files-found: error
+          retention-days: 7
