@@ -3,6 +3,8 @@ name: Package diary v1.5.7 updater
 on:
   push:
     branches: [artifact/diary-script-v157]
+  pull_request:
+    branches: [main]
 
 jobs:
   package:
