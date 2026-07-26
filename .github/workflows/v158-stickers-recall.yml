@@ -72,6 +72,8 @@ jobs:
           if(api.compactRecallText('你撤回了一条消息：“秘密内容”')!=='你撤回了一条消息')throw new Error('user recall compaction failed');
           if(api.compactRecallText('萧逸撤回了一条消息：原文')!=='对方撤回了一条消息')throw new Error('assistant recall compaction failed');
           console.log('v1.5.8 behavior checks passed');
+          api.destroy?.();
+          process.exit(0);
           NODE
 
       - name: Build offline App patch
