@@ -1,0 +1,112 @@
+name: v1.5.8 sticker and recall checks
+
+on:
+  push:
+    branches: [fix/stickers-recall-v1.5.8]
+  pull_request:
+    paths:
+      - 'js/eve-reliability-v158.js'
+      - 'js/healthcheck.js'
+      - 'apply-v1.5.8-stickers-recall.command'
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax checks
+        run: |
+          node --check js/eve-reliability-v158.js
+          node --check js/healthcheck.js
+          bash -n apply-v1.5.8-stickers-recall.command
+
+      - name: Runtime behavior checks
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const vm = require('vm');
+          const listeners = {};
+          global.window = global;
+          global.customEmojis = [
+            {id:'shock-1',name:'吓一跳',description:'震惊',tags:['震惊','惊讶'],url:'data:image/png;base64,AA==',aiMetadata:{emotions:['震惊'],intents:['情绪回应']}},
+            {id:'ok-1',name:'OK',description:'点头同意',tags:['赞同','ok','收到'],url:'data:image/png;base64,AA==',aiMetadata:{emotions:['开心'],intents:['表达赞同']}}
+          ];
+          const noop = () => {};
+          global.document = {
+            readyState:'complete', hidden:false, body:{}, documentElement:{}, head:{appendChild:noop},
+            addEventListener:(name,fn)=>{listeners[name]=fn},
+            getElementById:()=>null, querySelectorAll:()=>[], createElement:()=>({style:{},classList:{add:noop},appendChild:noop})
+          };
+          global.MutationObserver = class { observe(){} disconnect(){} };
+          global.CustomEvent = class { constructor(name,init){this.type=name;this.detail=init?.detail} };
+          global.dispatchEvent = noop;
+          global.addEventListener = noop;
+          global.EVEStickerStorage = {
+            readVault:async()=>global.customEmojis,
+            saveAll:async()=>({ok:true,vaultCount:global.customEmojis.length})
+          };
+          global.EVEStickers = {
+            resolveItem:q=>global.customEmojis.find(x=>[x.id,x.name,x.description,...x.tags].some(v=>String(v).toLowerCase()===String(q).toLowerCase()))||null
+          };
+          global.EVEStickerIntelligence = {
+            findCandidates:q=>{
+              const s=String(q).toLowerCase();
+              if(s.includes('震惊')||s.includes('惊讶'))return[{id:'shock-1',score:20}];
+              if(s.includes('赞同')||s.includes('ok'))return[{id:'ok-1',score:20}];
+              return[];
+            }
+          };
+          const transforms = {};
+          global.EVEAdapter = {
+            registerContextProvider:noop,
+            registerResponseTransformer:(id,fn)=>{transforms[id]=fn}
+          };
+          vm.runInThisContext(fs.readFileSync('js/eve-reliability-v158.js','utf8'));
+          const api=global.EVEReliabilityV158;
+          if(!api)throw new Error('runtime not installed');
+          const a=JSON.parse(api.responseTransformer('{"type":"emoji","description":"惊讶"}'));
+          if(a[0].stickerId!=='shock-1')throw new Error('semantic emoji mapping failed');
+          const b=JSON.parse(api.responseTransformer('[发送了表情包：ok]'));
+          if(b[0].stickerId!=='ok-1')throw new Error('placeholder mapping failed');
+          if(api.compactRecallText('你撤回了一条消息：“秘密内容”')!=='你撤回了一条消息')throw new Error('user recall compaction failed');
+          if(api.compactRecallText('萧逸撤回了一条消息：原文')!=='对方撤回了一条消息')throw new Error('assistant recall compaction failed');
+          console.log('v1.5.8 behavior checks passed');
+          NODE
+
+      - name: Build offline App patch
+        run: |
+          rm -rf dist
+          mkdir -p dist/app-patch/www/js
+          cp js/eve-reliability-v158.js dist/app-patch/www/js/
+          cp js/healthcheck.js dist/app-patch/www/js/
+          cp apply-v1.5.8-stickers-recall.command dist/app-patch/
+          cat > dist/app-patch/README.txt <<'EOF'
+          EVE v1.5.8 App 修复包
+          1. 解压后不要只移动 .command 文件。
+          2. 在终端机执行：bash apply-v1.5.8-stickers-recall.command
+          3. 选择目前的 EVE iOS 项目资料夹。
+          4. Xcode 打开后选择 iPhone 并按 Run。
+          EOF
+          chmod +x dist/app-patch/apply-v1.5.8-stickers-recall.command
+          (cd dist/app-patch && zip -r ../EVEChat-v1.5.8-app-patch.zip .)
+
+      - name: Build Web package
+        run: |
+          mkdir -p dist/web
+          rsync -a ./ dist/web/ \
+            --exclude '.git' --exclude '.github' --exclude 'dist' \
+            --exclude 'apply-v1.5.8-stickers-recall.command'
+          (cd dist/web && zip -r ../EVEChat-v1.5.8-web.zip .)
+          cd dist
+          sha256sum EVEChat-v1.5.8-app-patch.zip EVEChat-v1.5.8-web.zip > EVEChat-v1.5.8-SHA256.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EVEChat-v1.5.8-stickers-recall
+          path: |
+            dist/EVEChat-v1.5.8-app-patch.zip
+            dist/EVEChat-v1.5.8-web.zip
+            dist/EVEChat-v1.5.8-SHA256.txt
+          retention-days: 90
