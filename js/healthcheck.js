@@ -1,11 +1,28 @@
-/** EVE Chat Health Check v1.3.4 */
+/** EVE Chat Health Check v1.5.8 */
 (function (window, document) {
   'use strict';
   if (window.EVEHealth?.version) return;
-  const VERSION = '1.3.4';
+  const VERSION = '1.5.8';
+  const RUNTIME_VERSION = '1.5.8';
+  const RUNTIME_ID = 'eve-reliability-v158-script';
   const errors = [];
   let initialized = false;
 
+  function ensureReliabilityRuntime() {
+    if (window.EVEReliabilityV158?.version === RUNTIME_VERSION) {
+      window.EVEReliabilityV158.init?.();
+      return true;
+    }
+    if (document.getElementById(RUNTIME_ID)) return true;
+    const script = document.createElement('script');
+    script.id = RUNTIME_ID;
+    script.src = new URL(`js/eve-reliability-v158.js?v=${RUNTIME_VERSION}`, document.baseURI).href;
+    script.async = false;
+    script.dataset.eveModule = 'reliability-v158';
+    script.onerror = () => capture('module', new Error(`可靠性模块载入失败：${script.src}`));
+    (document.head || document.documentElement).appendChild(script);
+    return true;
+  }
   function clean(value, max = 500) { return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max); }
   function test(name, pass, detail = '', severity = 'error') { return { name, pass:Boolean(pass), detail:clean(detail), severity }; }
   function capture(type, reason) {
@@ -18,6 +35,7 @@
     const momentsDiagnostics = window.EVEMoments?.getDiagnostics?.() || null;
     const webIconDiagnostics = window.EVEWebIcon?.getDiagnostics?.() || null;
     const recoveryDiagnostics = window.EVEResponseRecovery?.getDiagnostics?.() || null;
+    const reliabilityDiagnostics = window.EVEReliabilityV158?.diagnostics?.() || null;
     const results = [
       test('index-dom', Boolean(document.getElementById('phone-screen') || document.getElementById('api-chat-screen')), 'EVE Chat 主界面'),
       test('adapter-loaded', Boolean(adapter), 'EVEAdapter'),
@@ -37,6 +55,9 @@
       test('stickers-loaded', Boolean(window.EVEStickers), 'EVEStickers'),
       test('sticker-storage-loaded', Boolean(window.EVEStickerStorage), JSON.stringify(window.EVEStickerStorage?.getStatus?.() || {}), 'warning'),
       test('sticker-storage-vault', Boolean(window.EVEStickerStorage?.readVault && window.EVEStickerStorage?.saveAll), '独立保险库与写后验证', 'warning'),
+      test('runtime-reliability-v158', Boolean(window.EVEReliabilityV158), JSON.stringify(reliabilityDiagnostics || {}), 'warning'),
+      test('runtime-sticker-recovery', Boolean(window.EVEReliabilityV158?.restoreStickers), JSON.stringify(reliabilityDiagnostics || {}), 'warning'),
+      test('runtime-compact-recall', Boolean(window.EVEReliabilityV158?.compactRecallText), '撤回提示不显示原文', 'warning'),
       test('moment-image-upload-loaded', Boolean(window.EVEMomentImageUpload), JSON.stringify(window.EVEMomentImageUpload?.getDiagnostics?.() || {}), 'warning'),
       test('moment-image-upload-hook', Boolean(window.EVEMomentImageUpload?.getDiagnostics?.().overrideInstalled), 'iOS 持久文件选择器', 'warning'),
       test('app-runtime-loaded', Boolean(window.EVEAppRuntime), JSON.stringify(window.EVEAppRuntime?.diagnostics?.() || {}), 'warning'),
@@ -107,10 +128,12 @@
   }
   function init() {
     if (initialized) return; initialized=true;
+    ensureReliabilityRuntime();
     window.addEventListener('error',event=>capture('error',event.error||event.message));
     window.addEventListener('unhandledrejection',event=>capture('promise',event.reason));
     window.setTimeout(()=>window.dispatchEvent(new CustomEvent('eve:health-ready',{detail:run()})),1500);
   }
-  window.EVEHealth=Object.freeze({version:VERSION,init,run,print,openPanel,getErrors:()=>errors.slice()});
+  ensureReliabilityRuntime();
+  window.EVEHealth=Object.freeze({version:VERSION,init,run,print,openPanel,getErrors:()=>errors.slice(),ensureReliabilityRuntime});
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init,{once:true}):init();
 })(window,document);
