@@ -3,6 +3,7 @@ name: Package OC Life v0.1.0
 on:
   push:
     branches: [oc-life-v0.1.0]
+  pull_request:
     paths:
       - 'oc-life/**'
       - '.github/workflows/package-oc-life-v010.yml'
