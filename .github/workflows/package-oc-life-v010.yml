@@ -1,0 +1,34 @@
+name: Package OC Life v0.1.0
+
+on:
+  push:
+    branches: [oc-life-v0.1.0]
+    paths:
+      - 'oc-life/**'
+      - '.github/workflows/package-oc-life-v010.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sanity check
+        run: |
+          test -s oc-life/index.html
+          grep -q "OC Life" oc-life/index.html
+          grep -q "我的世界" oc-life/index.html
+          grep -q "data-tab=\"moments\"" oc-life/index.html
+      - name: Build standalone ZIP
+        run: |
+          mkdir -p dist/OCLife-v0.1.0
+          cp -R oc-life/* dist/OCLife-v0.1.0/
+          cd dist
+          zip -r OCLife-v0.1.0.zip OCLife-v0.1.0
+          sha256sum OCLife-v0.1.0.zip > OCLife-v0.1.0-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OCLife-v0.1.0
+          path: |
+            dist/OCLife-v0.1.0.zip
+            dist/OCLife-v0.1.0-SHA256.txt
+          retention-days: 90
