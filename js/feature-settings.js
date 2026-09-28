@@ -142,7 +142,10 @@
       input.dataset.eveBound = '1'; input.addEventListener('change', () => callback(input.checked));
     };
     bind('eve-cross-dimension-toggle', enabled => {
-      if (module('EVECrossDimension')?.setEnabled?.(enabled)) return;
+      if (module('EVECrossDimension')?.setEnabled?.(enabled)) {
+        toast(enabled ? '已開啟：角色將從下一次回覆明確認知彼此身處不同次元' : '已關閉跨次元認知');
+        return;
+      }
       document.getElementById('eve-cross-dimension-toggle').checked = false;
       toast('請先打開一位角色的聊天，再設定跨次元認知', 'error');
     });

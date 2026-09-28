@@ -245,6 +245,12 @@
 
   function getPromptContext(meta = {}) {
     if (!settings.enabled || !settings.promptEnabled) return '';
+    if (window.EVECrossDimension?.isEnabled?.(meta.chat)) return [
+      '【当前场景状态｜跨次元交流】',
+      '双方处于各自的世界，通过 EVE Chat 交流，不在同一个物理空间。',
+      '自动记录的地点、在场人物、拥抱和其他肢体动作不能当成双方当前共处或真实接触的证据；假设互动属于明确的想象。',
+      '理解各自正在进行的生活时参考对方实际发来的消息，不把旧的面对面场景继续当作现实。'
+    ].join('\n');
     const state = getState(meta.chat?.scope);
     const lines = [
       '【当前场景状态｜短期一致性约束】',
