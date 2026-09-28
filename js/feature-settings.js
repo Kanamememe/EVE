@@ -34,6 +34,10 @@
     section.innerHTML = `<div class="section-header"><i class="fas fa-puzzle-piece section-icon"></i><span class="section-title">EVE 扩展功能</span></div><div class="setting-card" data-eve-list></div>`;
     const card = section.querySelector('[data-eve-list]');
 
+    const crossDimension = row('跨次元認知', '讓目前角色知道你們身處不同次元，透過 EVE Chat 交流；每位角色獨立設定', switchMarkup('eve-cross-dimension-toggle', module('EVECrossDimension')?.isEnabled?.()));
+    crossDimension.onclick = event => { if (!event.target.closest('.toggle-switch')) document.getElementById('eve-cross-dimension-toggle')?.click(); };
+    card.append(crossDimension);
+
     const weather = row('实时天气增强', '使用真实城市的当地时间与天气，并提供给 AI', switchMarkup('eve-weather-toggle', module('EVEWeather')?.getSettings?.().enabled !== false));
     weather.onclick = event => { if (!event.target.closest('.toggle-switch')) openWeatherSettings(); };
     card.append(weather);
@@ -137,6 +141,11 @@
       const input = document.getElementById(id); if (!input || input.dataset.eveBound) return;
       input.dataset.eveBound = '1'; input.addEventListener('change', () => callback(input.checked));
     };
+    bind('eve-cross-dimension-toggle', enabled => {
+      if (module('EVECrossDimension')?.setEnabled?.(enabled)) return;
+      document.getElementById('eve-cross-dimension-toggle').checked = false;
+      toast('請先打開一位角色的聊天，再設定跨次元認知', 'error');
+    });
     bind('eve-weather-toggle', enabled => module('EVEWeather')?.configure?.({ enabled }));
     bind('eve-proactive-toggle', enabled => module('EVEProactive')?.configure?.({ enabled }));
     bind('eve-auto-reply-toggle', enabled => module('EVEAdapter')?.configure?.({ autoReplyEnabled:enabled }));
@@ -247,6 +256,7 @@
 
   function refreshToggles() {
     const map = {
+      'eve-cross-dimension-toggle':module('EVECrossDimension')?.isEnabled?.(),
       'eve-weather-toggle':module('EVEWeather')?.getSettings?.().enabled,
       'eve-proactive-toggle':module('EVEProactive')?.getSettings?.().enabled,
       'eve-auto-reply-toggle':module('EVEAdapter')?.getSettings?.().autoReplyEnabled,
