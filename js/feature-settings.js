@@ -312,15 +312,19 @@
     initialized = true;
     scheduleInject(0);
     if (typeof MutationObserver !== 'undefined') {
-      observer = new MutationObserver(() => {
+      observer = new MutationObserver(records => {
         if (!document.getElementById('eve-extension-settings-section')) scheduleInject(40);
+        else if (records.some(record => record.target.id === 'api-chat-settings-screen' || record.target.id === 'api-chat-title')) refreshToggles();
       });
       observer.observe(document.documentElement, { childList:true, subtree:true });
+      const settingsScreen = document.getElementById('api-chat-settings-screen');
+      if (settingsScreen) observer.observe(settingsScreen, { attributes:true, attributeFilter:['style','class'] });
     }
     ['pageshow','eve:adapter-ready','eve:schedule-app-ready','eve:diary-app-ready','eve:memory-inbox-ready'].forEach(name => {
       window.addEventListener(name, () => scheduleInject(20));
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleInject(20); });
+    window.addEventListener('eve:cross-dimension-changed', refreshToggles);
     document.addEventListener('click', event => {
       if (event.target.closest('[onclick*="api-chat-settings-screen"], [data-screen="api-chat-settings-screen"], .chat-settings-button')) scheduleInject(60);
     }, true);

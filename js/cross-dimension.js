@@ -42,7 +42,7 @@
   }
   function bind() {
     if (!window.EVEAdapter?.registerContextProvider) return false;
-    window.EVEAdapter.registerContextProvider('cross-dimension', promptContext, { priority:0 });
+    window.EVEAdapter.registerContextProvider('cross-dimension', promptContext, { priority:-1 });
     return true;
   }
 
