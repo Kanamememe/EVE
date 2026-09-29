@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 
-function setup() {
+function setup(withConversationStyle = false) {
   const storage = new Map();
   const listeners = new Map();
   const eventTarget = {
@@ -23,7 +23,9 @@ function setup() {
     CustomEvent:class { constructor(type, options) { this.type=type; this.detail=options?.detail; } },
     MutationObserver:class { observe() {} disconnect() {} }, setTimeout, clearTimeout, setInterval, clearInterval
   });
-  for (const file of ['js/adapter.js','js/cross-dimension.js','plugins/scene-state/core.js']) {
+  const files = ['js/adapter.js','js/cross-dimension.js','plugins/scene-state/core.js'];
+  if (withConversationStyle) files.push('js/conversation-style.js');
+  for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'), context);
   }
   const cross = window.EVECrossDimension, scene = window.EVESceneState, adapter = window.EVEAdapter;
@@ -89,4 +91,40 @@ test('face-to-face scene cannot contradict active boundary and stored scene rema
   assert.equal(JSON.stringify(scene.getState()),original);
   cross.setEnabled(false);
   assert.match(scene.getPromptContext(),/互动形式：面对面/);
+});
+
+test('conversation style reaches the real request with cross-dimension mode both off and on', async () => {
+  const {window,cross,adapter,sent}=setup(true);
+  adapter.registerContextProvider('long-context',()=> 'x'.repeat(20000));
+  await adapter.init();
+  const messages=[{role:'system',content:'角色很直接。回复必须为 JSON 数组。'},
+    {role:'user',content:'今天不想上课，只想撒娇一下。'}];
+  for(const enabled of [false,true]) {
+    cross.setEnabled(enabled);
+    await window.fetch('https://example.test/v1/chat/completions',{method:'POST',body:JSON.stringify({messages})});
+    const output=sent();
+    assert.match(output.messages.at(-2).content,/EVE聊天分寸/);
+    assert.equal(count(output),enabled ? 1 : 0);
+    assert.equal(output.messages.at(-1).content,messages.at(-1).content);
+    assert.match(JSON.stringify(output),/回复必须为 JSON 数组/);
+    assert.equal(JSON.stringify(window.EVEConversationStyle.injectRequest(output)),JSON.stringify(output));
+  }
+});
+
+test('conversation style supports Gemini and Responses and skips unrelated tasks without touching history', () => {
+  const {window}=setup(true), style=window.EVEConversationStyle;
+  for(const body of [
+    {contents:[],systemInstruction:{parts:[{text:'原规则'}]}},
+    {contents:[],system_instruction:{parts:[{text:'原规则'}]}},
+    {input:'我只是想你了',instructions:'原规则'}
+  ]) {
+    const output=style.injectRequest(body);
+    assert.match(JSON.stringify(output),/原规则/);
+    assert.match(JSON.stringify(output),/EVE聊天分寸/);
+    assert.equal(JSON.stringify(style.injectRequest(output)),JSON.stringify(output));
+    assert.doesNotMatch(JSON.stringify(style.injectRequest(output,{feature:'diary'})),/EVE聊天分寸/);
+  }
+  const history={messages:[{role:'assistant',content:'之前的回答'},{role:'user',content:'今天有点烦'}]};
+  assert.equal(JSON.stringify(style.injectRequest(history,{feature:'memory-analysis'})),JSON.stringify(history));
+  assert.equal(JSON.stringify(style.injectRequest(history,{chat:{id:''}})),JSON.stringify(history));
 });

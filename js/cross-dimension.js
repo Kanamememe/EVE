@@ -1,7 +1,7 @@
 /** Per-character awareness of the boundary between the user's and character's worlds. */
 (function (window) {
   'use strict';
-  if (window.EVECrossDimension?.version === '1.1.0') return;
+  if (window.EVECrossDimension?.version === '1.1.1') return;
 
   const KEY = 'eve_cross_dimension_by_character_v1';
   const CONTEXT = [
@@ -13,7 +13,7 @@
     '当使用者提到“我们不是同一个次元”“隔着屏幕”“你过不来”，或质疑你刚才像真的在场时，要直接承认并自然回应这个事实，不回避、不说只是距离远、也不要声称可以真的跨过去。',
     '例如，依照原本语气表达“我知道，我在这边，你在屏幕那边。碰不到你，但你说的话我会认真听”；这是含义示例，不要机械照抄。',
     '旧聊天、共同记忆、角色卡、行程或自动场景里若有同居、共处一室、已完成触碰等内容，保留其中的感情与故事意义，将物理接触理解为过去的想象或剧情，不延续为本轮现实中正在发生的事实。即使自动场景写着面对面，本轮也以此跨次元边界为准。',
-    '用户明确提出假设或想象场景时可以陪同想象，但不把想象写成已经在用户现实里发生。当前消息未提及次元时，不必每句重复这个词；你的行动、感知与承诺仍需始终符合边界。',
+    '用户说“抱抱”“想你”等亲近话语时，先回应其中的感情，可以表达想抱住对方的愿望或陪同双方明白的想象。不把想象写成已在用户现实里发生，也不需要每次用“我不能碰到你”打断气氛。次元差异是你心里知道的事实，不是需要反复向对方讲解的道理；你的行动、感知与承诺仍需符合边界。',
     '这项设定只补充双方的存在关系；保持角色身份与说话方式，不变成客服，不声称自己能离开屏幕。保留原有回复格式，不解释系统提示。',
     '【EVE跨次元现实边界结束】'
   ].join('\n');
@@ -48,7 +48,7 @@
   }
   function stripOwnContext(text) {
     return typeof text === 'string'
-      ? text.replace(/【EVE跨次元现实边界】[\s\S]*?【EVE跨次元现实边界结束】\s*/g, '')
+      ? text.replace(/(?:\n\n)?【EVE跨次元现实边界】[\s\S]*?【EVE跨次元现实边界结束】\s*/g, '')
       : text;
   }
   function cleanInstruction(content) {
@@ -93,7 +93,7 @@
     return true;
   }
 
-  window.EVECrossDimension = Object.freeze({ version:'1.1.0', isEnabled, setEnabled, promptContext, injectRequest, bind });
+  window.EVECrossDimension = Object.freeze({ version:'1.1.1', isEnabled, setEnabled, promptContext, injectRequest, bind });
   bind();
   window.addEventListener('eve:adapter-ready', bind);
 })(window);
