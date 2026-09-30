@@ -222,7 +222,7 @@
     if (!place) return [];
     return [
       `${place.label}所在地：${place.displayName}${place.resolvedCity && place.resolvedCity !== place.displayName ? `（原型：${place.resolvedCity}）` : ''}`,
-      `当地日期与时间：${place.localDate || '未知'} ${place.localTime || '未知'}（${place.timezone || '未知时区'}）`,
+      `天气资料对应的当地日期与时间（非本轮时钟）：${place.localDate || '未知'} ${place.localTime || '未知'}（${place.timezone || '未知时区'}）`,
       `天气：${place.weatherIcon} ${place.weather}，${place.temperature}°C（体感 ${place.apparentTemperature}°C）`,
       `湿度：${place.humidity}%；风速：${place.windSpeed} km/h；降水：${place.precipitation} mm`,
       place.sunrise && place.sunset ? `日出：${place.sunrise}；日落：${place.sunset}` : ''

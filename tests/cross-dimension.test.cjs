@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 
-function setup(withConversationStyle = false) {
+function setup(withConversationStyle = false, fixedNow = null) {
   const storage = new Map();
   const listeners = new Map();
   const eventTarget = {
@@ -19,12 +19,14 @@ function setup(withConversationStyle = false) {
   const document = { ...eventTarget, readyState:'loading', body:{},
     querySelectorAll:() => [], getElementById:() => null };
   const context = vm.createContext({ window, document, console, Request, Response, Headers,
+    Date:fixedNow === null ? Date : class extends Date { static now() { return fixedNow; } },
     localStorage:{ getItem:key => storage.get(key) || null, setItem:(key,value) => storage.set(key,value) },
     CustomEvent:class { constructor(type, options) { this.type=type; this.detail=options?.detail; } },
     MutationObserver:class { observe() {} disconnect() {} }, setTimeout, clearTimeout, setInterval, clearInterval
   });
   const files = ['js/adapter.js','js/cross-dimension.js','plugins/scene-state/core.js'];
   if (withConversationStyle) files.push('js/conversation-style.js');
+  if (fixedNow !== null) files.push('js/temporal-context.js');
   for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'), context);
   }
@@ -127,4 +129,45 @@ test('conversation style supports Gemini and Responses and skips unrelated tasks
   const history={messages:[{role:'assistant',content:'之前的回答'},{role:'user',content:'今天有点烦'}]};
   assert.equal(JSON.stringify(style.injectRequest(history,{feature:'memory-analysis'})),JSON.stringify(history));
   assert.equal(JSON.stringify(style.injectRequest(history,{chat:{id:''}})),JSON.stringify(history));
+});
+
+test('fresh user message does not erase an overnight gap and stale scene cannot resume automatically', async () => {
+  const now=new Date(2026,8,30,19,0).getTime();
+  const {window,adapter,scene,sent}=setup(true,now);
+  window.chatMessages={A:[
+    {id:'old',sender:'received',timestamp:now-26*3600000},
+    {id:'new',sender:'sent',timestamp:now-1000}
+  ], B:[{sender:'received',timestamp:now-60000}]};
+  const temporal=window.EVETemporalContext;
+  assert.equal(temporal.getTiming().gapMs,26*3600000);
+  assert.equal(temporal.getTiming().dayChanged,true);
+  assert.equal(temporal.getTiming().resumed,true);
+  assert.equal(temporal.getTiming({chat:{id:'B'}}).resumed,false);
+  scene.update({mode:'face-to-face',currentActivity:'昨天的晚餐'});
+  assert.match(scene.getPromptContext(),/间隔后重返聊天/);
+  assert.doesNotMatch(scene.getPromptContext(),/昨天的晚餐/);
+  await adapter.init();
+  await window.fetch('https://example.test/v1/chat/completions',{method:'POST',body:JSON.stringify({messages:[{role:'user',content:'今天过得怎么样'}]})});
+  assert.match(sent().messages.at(-2).content,/1天2小时0分钟/);
+  assert.equal(sent().messages.at(-1).content,'今天过得怎么样');
+  const retry=temporal.injectRequest(sent());
+  assert.equal(JSON.stringify(retry).split('【EVE本轮时间】').length-1,1);
+});
+
+test('midnight alone does not mean a long absence; missing and future timestamps stay unknown', () => {
+  const now=new Date(2026,8,30,0,5).getTime();
+  const {window}=setup(false,now), temporal=window.EVETemporalContext;
+  window.chatMessages={A:[{sender:'received',timestamp:now-10*60000},{sender:'sent',timestamp:now}]};
+  assert.equal(temporal.getTiming().dayChanged,true);
+  assert.equal(temporal.getTiming().resumed,false);
+  window.chatMessages.A=[{sender:'received',timestamp:'invalid'},{sender:'sent',timestamp:now+10000}];
+  assert.equal(temporal.getTiming().referenceAt,null);
+  assert.match(temporal.getPromptContext(),/没有可靠的历史时间/);
+  window.chatMessages.A=[{sender:'received',timestamp:new Date(now-7200000).toISOString()}];
+  assert.equal(temporal.getTiming().gapMs,7200000);
+  for(const body of [{contents:[]},{contents:[],system_instruction:{parts:[{text:'原规则'}]}},{input:'你好'}]) {
+    const output=temporal.injectRequest(body);
+    assert.match(JSON.stringify(output),/EVE本轮时间/);
+    assert.equal(JSON.stringify(temporal.injectRequest(output)),JSON.stringify(output));
+  }
 });

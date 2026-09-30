@@ -451,6 +451,17 @@
     catch (_) {}
     return null;
   }
+  function getConversationTimeline(characterId = getCurrentChat().id) {
+    if (characterId == null || characterId === '') return [];
+    let history;
+    try { if (typeof chatMessages !== 'undefined') history = chatMessages[characterId]; } catch (_) {}
+    history ||= window.chatMessages?.[characterId];
+    if (!Array.isArray(history)) return [];
+    return history.slice(-1000).map(message => ({
+      id:message.id, sender:message.sender || message.role, isUser:message.isUser,
+      timestamp:message.timestamp ?? message.createdAt
+    }));
+  }
   function registerBuiltIns() {
     if (!providers.has('weather')) registerContextProvider('weather', () => config.injectWeather ? window.EVEWeather?.getPromptContext?.() || '' : '', { priority:20 });
     if (!providers.has('activity')) registerContextProvider('activity', () => config.injectActivity ? window.EVEProactive?.getPromptContext?.() || '' : '', { priority:30 });
@@ -489,7 +500,7 @@
     getCurrentChat, registerContextProvider, unregisterContextProvider, setContextProviderEnabled,
     registerRequestTransformer, unregisterRequestTransformer, registerResponseTransformer, unregisterResponseTransformer,
     getPromptContext:collectContext, injectGeminiContext:injectContext, setOneShotContext, clearOneShotContext,
-    markUserMessage, requestSmartReply, requestProactiveMessage, getLegacyMessage, rawFetch,
+    markUserMessage, requestSmartReply, requestProactiveMessage, getLegacyMessage, getConversationTimeline, rawFetch,
     triggerProactiveNow:() => window.EVEProactive?.triggerNow?.({ force:true }) || requestProactiveMessage({ reason:'manual' })
   });
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init, { once:true }) : init();
